@@ -333,7 +333,7 @@ def generate_soul(answers: dict, api_key: str) -> str:
         result = _openrouter_request(
             api_key,
             [{"role": "user", "content": prompt}],
-            model="openrouter/anthropic/claude-haiku-4.5",
+            model="openrouter/anthropic/claude-sonnet-4-6",
             max_tokens=2000,
         )
         print(f" {GREEN}✓{RESET}")
