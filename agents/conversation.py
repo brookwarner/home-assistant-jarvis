@@ -343,9 +343,11 @@ def _load_system_prompt() -> str:
     base = (
         f"Current local date and time: {_now_str()}\n\n"
         "You have tools to read entity states, control devices, remember things, and edit HA config files.\n"
-        "Use search_entities ONCE with a broad keyword to find entity IDs, then check states. Minimise tool calls.\n"
+        "To find entity IDs: use search_entities with a broad keyword. "
+        "If search_entities returns nothing, try a different keyword, then try get_states_by_domain, then try get_state with a guessed ID. "
+        "Never give up after one failed search — try at least 3 approaches.\n"
         "When taking actions, confirm what you did in one sentence.\n"
-        "When asked questions, fetch live data — never guess entity IDs.\n\n"
+        "When asked questions, fetch live data — never guess entity IDs without trying.\n\n"
         f"TIMEZONE: All HA timestamps are UTC. Local timezone is {_tz()}. Always convert to local time before reporting.\n\n"
         "FORMATTING: Never use markdown. No bold, italics, tables, * bullets, # headers, backticks.\n\n"
         "BREVITY: First sentence is the answer. Add context only if essential. "
@@ -472,14 +474,23 @@ class ConversationAgent:
                         "content": json.dumps(result),
                     })
             else:
-                content = msg.content or "[No response]"
+                content = msg.content
+                # If model returned empty content (no answer), force a synthesis
+                if not content or not content.strip():
+                    msgs.append({"role": "assistant", "content": None})
+                    msgs.append({"role": "user", "content": "Based on everything you found, give your answer now."})
+                    retry = await litellm.acompletion(
+                        model=self._model, messages=msgs, temperature=0.5, max_tokens=1024, **extra,
+                    )
+                    content = retry.choices[0].message.content or "I checked but couldn't formulate a response."
                 return content + _format_tool_footer(tool_log)
 
         # Hit max tool rounds — force a final response without tools
+        msgs.append({"role": "user", "content": "Based on everything you found, give your answer now."})
         response = await litellm.acompletion(
             model=self._model, messages=msgs, temperature=0.5, max_tokens=1024, **extra,
         )
-        content = response.choices[0].message.content or "[No response]"
+        content = response.choices[0].message.content or "I checked but couldn't formulate a response."
         return content + _format_tool_footer(tool_log)
 
     async def _run_opus(self, task: str) -> dict:
