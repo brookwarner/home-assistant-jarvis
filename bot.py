@@ -84,21 +84,34 @@ async def on_ha_event(event: dict) -> None:
             pass
 
 
+async def _keep_typing(bot, chat_id: int) -> None:
+    """Re-send typing action every 4s so it persists during long tool chains."""
+    try:
+        while True:
+            await bot.send_chat_action(chat_id=chat_id, action="typing")
+            await asyncio.sleep(4)
+    except asyncio.CancelledError:
+        pass
+
+
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if update.effective_chat.id != config.TELEGRAM_CHAT_ID:
         logger.warning(f"Ignoring message from unknown chat {update.effective_chat.id}")
         return
     user_text = update.message.text
     logger.info(f"Received text: {user_text[:80]}")
-    await context.bot.send_chat_action(chat_id=update.effective_chat.id, action="typing")
-    reply = await agent.reply(chat_id=update.effective_chat.id, user_text=user_text)
+    typing_task = asyncio.create_task(_keep_typing(context.bot, update.effective_chat.id))
+    try:
+        reply = await agent.reply(chat_id=update.effective_chat.id, user_text=user_text)
+    finally:
+        typing_task.cancel()
     await update.message.reply_text(_strip_markdown(reply))
 
 
 async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if update.effective_chat.id != config.TELEGRAM_CHAT_ID:
         return
-    await context.bot.send_chat_action(chat_id=update.effective_chat.id, action="typing")
+    typing_task = asyncio.create_task(_keep_typing(context.bot, update.effective_chat.id))
     voice = update.message.voice
     tg_file = await context.bot.get_file(voice.file_id)
 
@@ -112,6 +125,7 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         reply = await agent.reply(chat_id=update.effective_chat.id, user_text=text)
         await update.message.reply_text(f"[{text}]\n\n{_strip_markdown(reply)}")
     finally:
+        typing_task.cancel()
         Path(tmp_path).unlink(missing_ok=True)
 
 
