@@ -7,17 +7,19 @@ logger = logging.getLogger(__name__)
 
 BRIEFING_PROMPT_PATH = Path(__file__).parent.parent / "briefing_prompt.md"
 
-_FALLBACK_PROMPT = (
-    "You are Jarvis, the AI for a smart home. "
-    "Generate a morning briefing based on current home state. Under 150 words. "
-    "Plain prose only. Lead with the most interesting thing. Don't invent data."
-)
+def _fallback_prompt() -> str:
+    from jarvis.config import config
+    return (
+        f"You are {config.BOT_NAME}, the AI for a smart home. "
+        "Generate a morning briefing based on current home state. Under 150 words. "
+        "Plain prose only. Lead with the most interesting thing. Don't invent data."
+    )
 
 
 def _load_system_prompt() -> str:
     if BRIEFING_PROMPT_PATH.exists():
         return BRIEFING_PROMPT_PATH.read_text().strip()
-    return _FALLBACK_PROMPT
+    return _fallback_prompt()
 
 
 async def generate(ha_state_summary: str) -> str:

@@ -77,15 +77,25 @@ cp .env.example .env
 # Edit .env with your tokens, HA URL, and model choices
 ```
 
-### 4. Create instance files
+### 4. Run onboarding
+
+The onboarding script generates all instance-specific files interactively:
 
 ```bash
-# Personality — customise to match your home and preferences
-cp soul.example.md soul.md
+.venv/bin/python scripts/onboard.py
+```
 
-# Entity reference — auto-generate or populate manually
+It will ask about your name, pronouns, location, home features, personality style, and API keys, then generate:
+- `.env` — all credentials and configuration
+- `soul.md` — personalised AI personality (written by an LLM based on your answers)
+- `ha_entities.md` — entity reference (auto-pulled from your HA instance)
+- `briefing_prompt.md` — morning briefing instructions
+
+Or configure manually by copying the example files:
+```bash
+cp .env.example .env          # then edit with your values
+cp soul.example.md soul.md    # then customise
 cp ha_entities.example.md ha_entities.md
-# (Or run: python3 scripts/onboard.py to auto-generate everything)
 ```
 
 ### 5. Home Assistant configuration
@@ -168,7 +178,7 @@ bash start.sh
 # or: PYTHONPATH=/homeassistant /homeassistant/jarvis/.venv/bin/python /homeassistant/jarvis/bot.py
 ```
 
-Jarvis will send "Jarvis online. How can I help?" to your Telegram chat on startup.
+The bot will send "{BOT_NAME} online. How can I help?" to your Telegram chat on startup.
 
 ---
 

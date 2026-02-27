@@ -6,7 +6,9 @@ logger = logging.getLogger(__name__)
 
 VALID_ACTIONS = {"ignore", "log", "notify", "needs_input"}
 
-SYSTEM_PROMPT = """You are Jarvis, an AI home automation assistant.
+def _system_prompt() -> str:
+    from jarvis.config import config
+    return f"""You are {config.BOT_NAME}, an AI home automation assistant.
 Your job is to classify incoming Home Assistant events and decide the appropriate action.
 
 Respond with EXACTLY one word — no explanation:
@@ -37,7 +39,7 @@ async def classify(event: dict, ha_context: str) -> str:
         raw = await complete(
             "triage",
             [
-                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "system", "content": _system_prompt()},
                 {"role": "user", "content": user_msg},
             ],
             max_tokens=10,

@@ -157,8 +157,8 @@ async def main() -> None:
     scheduler = build_scheduler(ha, triage_poll, None, send_to_user)
     scheduler.start()
 
-    logger.info("Jarvis is online.")
-    await send_to_user("Jarvis online. How can I help?")
+    logger.info(f"{config.BOT_NAME} is online.")
+    await send_to_user(f"{config.BOT_NAME} online. How can I help?")
 
     async with app:
         await app.initialize()

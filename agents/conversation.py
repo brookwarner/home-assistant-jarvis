@@ -14,6 +14,11 @@ def _tz() -> str:
     from jarvis.config import config
     return config.TIMEZONE
 
+
+def _bot_name() -> str:
+    from jarvis.config import config
+    return config.BOT_NAME
+
 MAX_HISTORY = 20
 MAX_TOOL_ROUNDS = 5
 
@@ -169,7 +174,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "add_custom_alert",
-            "description": "Add a new custom monitor that Jarvis will check every 5 minutes.",
+            "description": "Add a new custom monitor that will be checked every 5 minutes.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -227,7 +232,7 @@ TOOLS = [
         "function": {
             "name": "read_self",
             "description": (
-                "Read one of Jarvis's own configuration files. "
+                "Read one of the bot's own configuration files. "
                 "Available: soul.md (personality), ha_entities.md (known entities), briefing_prompt.md (morning briefing instructions)."
             ),
             "parameters": {
@@ -247,7 +252,7 @@ TOOLS = [
         "function": {
             "name": "write_self",
             "description": (
-                "Overwrite one of Jarvis's own configuration files. "
+                "Overwrite one of the bot's own configuration files. "
                 "Changes to soul.md and briefing_prompt.md take effect on the next message. "
                 "Always read_self first. Available: soul.md, ha_entities.md, briefing_prompt.md."
             ),
@@ -344,7 +349,7 @@ def _load_system_prompt() -> str:
         soul = SOUL_PATH.read_text()
         return f"{soul}\n\n---\n\n{base}{memory}"
     return (
-        "You are Jarvis, an AI smart home assistant.\n\n"
+        f"You are {_bot_name()}, an AI smart home assistant.\n\n"
         + base + memory
     )
 
@@ -353,7 +358,7 @@ _HUMAN_SERVICE = {"turn_on": "on", "turn_off": "off", "toggle": "toggled"}
 
 
 def _format_tool_footer(tool_log: list[tuple[str, dict]]) -> str:
-    """Compact footer showing what Jarvis actually did. No raw entity IDs."""
+    """Compact footer showing what the bot actually did. No raw entity IDs."""
     reads = 0
     actions: list[str] = []
 
@@ -470,7 +475,7 @@ class ConversationAgent:
         logger.info(f"Delegating to Opus: {task[:80]}")
 
         opus_system = (
-            "You are Jarvis-Opus, the heavy-duty sub-agent for a Home Assistant smart home.\n"
+            f"You are {_bot_name()}-Opus, the heavy-duty sub-agent for a Home Assistant smart home.\n"
             "You handle complex tasks: refactors, multi-file edits, debugging, new automations.\n"
             "You have the same tools as the main agent. Work carefully, verify your changes.\n"
             "Return a clear summary of what you did.\n\n"
