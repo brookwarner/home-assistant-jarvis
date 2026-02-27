@@ -1,0 +1,29 @@
+# Secrets
+.env
+
+# Instance-specific personality and memory — copy from *.example.md to get started
+soul.md
+memory.md
+ha_entities.md
+
+# Runtime
+jarvis.log
+jarvis.pid
+nohup.out
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+venv/
+*.egg-info/
+dist/
+build/
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
