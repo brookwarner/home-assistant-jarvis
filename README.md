@@ -12,7 +12,7 @@ Built on a Raspberry Pi running [Home Assistant OS](https://www.home-assistant.i
 - **Conversational control** — ask natural language questions, get live sensor data, control devices
 - **Morning briefings** — daily summary of home state, weather, energy, water, calendar
 - **Proactive alerts** — monitors sensors and notifies you when thresholds are crossed
-- **Energy & water stats** — queries HA's long-term statistics database (Meridian Energy, Watercare, etc.)
+- **Energy & water stats** — queries HA's long-term statistics database for any recorder statistic
 - **Self-editing** — Jarvis can update his own personality (`soul.md`), briefing prompt, and HA automations
 - **Voice support** — send voice messages, transcribed via Whisper (optional)
 - **Persistent memory** — remembers facts and preferences across conversations

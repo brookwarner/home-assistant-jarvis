@@ -77,7 +77,7 @@ def build_scheduler(
         except Exception as e:
             logger.debug(f"Insight poll error: {e}")
 
-    # Daily briefing at 07:30 NZ time (scheduler uses local system time)
+    # Daily briefing at 07:30 local time (scheduler uses system time — set TZ env var)
     scheduler.add_job(morning_briefing, "cron", hour=7, minute=30, id="morning_briefing")
 
     # Insight poll every 5 minutes

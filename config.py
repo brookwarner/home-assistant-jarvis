@@ -12,13 +12,16 @@ class Config:
     OPENROUTER_API_KEY: str = os.environ.get("OPENROUTER_API_KEY", "")
     GROQ_API_KEY: str = os.environ.get("GROQ_API_KEY", "")
     TRIAGE_MODEL: str = os.environ.get(
-        "TRIAGE_MODEL", "openrouter/meta-llama/llama-3.1-8b-instruct:free"
+        "TRIAGE_MODEL", "openrouter/meta-llama/llama-3.2-3b-instruct:free"
     )
     BRIEFING_MODEL: str = os.environ.get(
-        "BRIEFING_MODEL", "openrouter/qwen/qwen-2.5-72b-instruct:free"
+        "BRIEFING_MODEL", "openrouter/anthropic/claude-haiku-4.5"
     )
-    CONVERSATION_MODEL: str = os.environ.get("CONVERSATION_MODEL", "claude-sonnet-4-6")
+    CONVERSATION_MODEL: str = os.environ.get(
+        "CONVERSATION_MODEL", "openrouter/anthropic/claude-haiku-4.5"
+    )
     OPUS_MODEL: str = os.environ.get("OPUS_MODEL", "openrouter/anthropic/claude-opus-4.6")
+    TIMEZONE: str = os.environ.get("TIMEZONE", "UTC")
     WEBHOOK_PORT: int = int(os.environ.get("WEBHOOK_PORT", "8765"))
     WHISPER_MODEL: str = os.environ.get("WHISPER_MODEL", "base")
     LOG_LEVEL: str = os.environ.get("LOG_LEVEL", "INFO")

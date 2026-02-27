@@ -6,7 +6,7 @@ logger = logging.getLogger(__name__)
 
 VALID_ACTIONS = {"ignore", "log", "notify", "needs_input"}
 
-SYSTEM_PROMPT = """You are Jarvis, an AI home automation assistant for a house in Auckland, NZ.
+SYSTEM_PROMPT = """You are Jarvis, an AI home automation assistant.
 Your job is to classify incoming Home Assistant events and decide the appropriate action.
 
 Respond with EXACTLY one word — no explanation:

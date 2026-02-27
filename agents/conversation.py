@@ -9,6 +9,11 @@ import litellm
 
 logger = logging.getLogger(__name__)
 
+
+def _tz() -> str:
+    from jarvis.config import config
+    return config.TIMEZONE
+
 MAX_HISTORY = 20
 MAX_TOOL_ROUNDS = 5
 
@@ -183,12 +188,12 @@ TOOLS = [
             "name": "remember",
             "description": (
                 "Save a fact, preference, or instruction to persistent memory for use in future conversations. "
-                "Use whenever Brook tells you something he wants you to remember."
+                "Use whenever the user tells you something they want you to remember."
             ),
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "note": {"type": "string", "description": "What to remember (e.g. 'Brook prefers spa at 38C')"},
+                    "note": {"type": "string", "description": "What to remember (e.g. 'User prefers spa at 38C')"},
                 },
                 "required": ["note"],
             },
@@ -323,8 +328,7 @@ def _load_system_prompt() -> str:
         "Use search_entities ONCE with a broad keyword to find entity IDs, then check states. Minimise tool calls.\n"
         "When taking actions, confirm what you did in one sentence.\n"
         "When asked questions, fetch live data — never guess entity IDs.\n\n"
-        "TIMEZONE: All HA timestamps are UTC. Auckland is NZST (UTC+12) April–October, "
-        "NZDT (UTC+13) October–April. Always convert to Auckland local time before reporting.\n\n"
+        f"TIMEZONE: All HA timestamps are UTC. Local timezone is {_tz()}. Always convert to local time before reporting.\n\n"
         "FORMATTING: Never use markdown. No bold, italics, tables, * bullets, # headers, backticks.\n\n"
         "BREVITY: First sentence is the answer. Add context only if essential. "
         "Never say 'certainly', 'of course', 'happy to help', 'great question'. Just answer."
@@ -340,7 +344,7 @@ def _load_system_prompt() -> str:
         soul = SOUL_PATH.read_text()
         return f"{soul}\n\n---\n\n{base}{memory}"
     return (
-        "You are Jarvis, an AI smart home assistant for a house in Auckland, New Zealand.\n\n"
+        "You are Jarvis, an AI smart home assistant.\n\n"
         + base + memory
     )
 
@@ -470,7 +474,7 @@ class ConversationAgent:
             "You handle complex tasks: refactors, multi-file edits, debugging, new automations.\n"
             "You have the same tools as the main agent. Work carefully, verify your changes.\n"
             "Return a clear summary of what you did.\n\n"
-            "TIMEZONE: Auckland NZST (UTC+12) / NZDT (UTC+13). Convert all times.\n"
+            f"TIMEZONE: All HA timestamps are UTC. Local timezone is {_tz()}. Convert all times.\n"
             "FORMATTING: Plain text only. No markdown."
         )
         msgs = [

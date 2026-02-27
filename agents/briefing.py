@@ -8,7 +8,7 @@ logger = logging.getLogger(__name__)
 BRIEFING_PROMPT_PATH = Path(__file__).parent.parent / "briefing_prompt.md"
 
 _FALLBACK_PROMPT = (
-    "You are Jarvis, the AI for a smart home in Auckland, NZ. "
+    "You are Jarvis, the AI for a smart home. "
     "Generate a morning briefing based on current home state. Under 150 words. "
     "Plain prose only. Lead with the most interesting thing. Don't invent data."
 )
