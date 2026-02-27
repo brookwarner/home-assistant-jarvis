@@ -1,6 +1,7 @@
 from __future__ import annotations
 import logging
-from datetime import datetime
+import datetime
+import zoneinfo
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -25,7 +26,12 @@ def _load_system_prompt() -> str:
 async def generate(ha_state_summary: str) -> str:
     from jarvis.router import complete
 
-    now = datetime.now().strftime("%A %d %B %Y, %H:%M")
+    from jarvis.config import config
+    try:
+        tz = zoneinfo.ZoneInfo(config.TIMEZONE)
+    except Exception:
+        tz = datetime.timezone.utc
+    now = datetime.datetime.now(tz).strftime("%A %d %B %Y, %H:%M %Z")
     user_msg = (
         f"Morning briefing request — {now}\n\n"
         f"Current home state:\n{ha_state_summary}"

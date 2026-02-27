@@ -326,9 +326,22 @@ TOOLS = [
 ]
 
 
+def _now_str() -> str:
+    """Current local date/time as a readable string."""
+    import datetime, zoneinfo
+    tz_name = _tz()
+    try:
+        tz = zoneinfo.ZoneInfo(tz_name)
+    except Exception:
+        tz = datetime.timezone.utc
+    now = datetime.datetime.now(tz)
+    return now.strftime("%A %d %B %Y, %H:%M %Z")
+
+
 def _load_system_prompt() -> str:
     """Load system prompt fresh each call so memory and entity updates are picked up."""
     base = (
+        f"Current local date and time: {_now_str()}\n\n"
         "You have tools to read entity states, control devices, remember things, and edit HA config files.\n"
         "Use search_entities ONCE with a broad keyword to find entity IDs, then check states. Minimise tool calls.\n"
         "When taking actions, confirm what you did in one sentence.\n"
@@ -479,7 +492,8 @@ class ConversationAgent:
             "You handle complex tasks: refactors, multi-file edits, debugging, new automations.\n"
             "You have the same tools as the main agent. Work carefully, verify your changes.\n"
             "Return a clear summary of what you did.\n\n"
-            f"TIMEZONE: All HA timestamps are UTC. Local timezone is {_tz()}. Convert all times.\n"
+            f"Current local date and time: {_now_str()}\n"
+        f"TIMEZONE: All HA timestamps are UTC. Local timezone is {_tz()}. Convert all times.\n"
             "FORMATTING: Plain text only. No markdown."
         )
         msgs = [
