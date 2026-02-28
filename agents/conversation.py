@@ -191,6 +191,25 @@ TOOLS = [
     {
         "type": "function",
         "function": {
+            "name": "send_message",
+            "description": (
+                "Send a Telegram message to the user immediately, without waiting for the end of your turn. "
+                "Use for: progress updates mid-task ('On it, querying energy stats now...'), "
+                "delivering an answer when triggered by a HA event, or follow-up messages. "
+                "If you use send_message to deliver the full answer, return an empty string as your final response."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "text": {"type": "string", "description": "Message to send to the user"},
+                },
+                "required": ["text"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "remember",
             "description": (
                 "Save a fact, preference, or instruction to persistent memory for use in future conversations. "
@@ -398,6 +417,8 @@ def _format_tool_footer(tool_log: list[tuple[str, dict]]) -> str:
             actions.append("delegated to Opus")
         elif name == "add_custom_alert":
             actions.append("added alert")
+        elif name == "send_message":
+            actions.append("sent message")
 
     parts: list[str] = []
     if reads > 0:
@@ -580,6 +601,11 @@ class ConversationAgent:
                 return _search_entities(inputs.get("query", ""))
             elif name == "add_custom_alert":
                 return await _add_custom_alert(inputs)
+            elif name == "send_message":
+                if self._send_fn:
+                    await self._send_fn(inputs.get("text", ""))
+                    return {"status": "sent"}
+                return {"error": "No send function configured"}
             elif name == "remember":
                 return _remember(inputs)
             elif name == "read_self":

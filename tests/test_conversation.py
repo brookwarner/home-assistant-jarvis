@@ -73,3 +73,29 @@ def test_agent_accepts_send_fn():
     assert agent._send_fn is send_fn
     assert agent._pending_reply is None
     assert agent._agent_busy is False
+
+
+async def test_send_message_tool_calls_send_fn():
+    """send_message tool calls the injected send_fn."""
+    from jarvis.agents.conversation import ConversationAgent
+    from jarvis.ha_client import HAClient
+
+    mock_ha = MagicMock(spec=HAClient)
+    send_fn = AsyncMock()
+    agent = ConversationAgent(mock_ha, send_fn=send_fn)
+
+    result = await agent._execute_tool("send_message", {"text": "Hello Brook"})
+
+    send_fn.assert_awaited_once_with("Hello Brook")
+    assert result == {"status": "sent"}
+
+
+async def test_send_message_no_send_fn():
+    """send_message without a send_fn returns error."""
+    from jarvis.agents.conversation import ConversationAgent
+    from jarvis.ha_client import HAClient
+
+    agent = ConversationAgent(MagicMock(spec=HAClient))
+    result = await agent._execute_tool("send_message", {"text": "Hello"})
+
+    assert "error" in result
