@@ -172,11 +172,14 @@ async def main() -> None:
     webhook_runner = await start_server(on_ha_event, config.WEBHOOK_PORT)
 
     # Start scheduler
-    async def triage_poll(summary: str) -> None:
-        # Called by scheduler insight poll — classify ongoing home state
-        pass  # Future: detect anomalies in state trends
+    async def proactive_poll(summary: str) -> None:
+        await agent.run_proactive(
+            context=f"Periodic home check. Current state:\n{summary}",
+            chat_id=config.TELEGRAM_CHAT_ID,
+            use_history=False,   # throwaway context — don't flood conversation history
+        )
 
-    scheduler = build_scheduler(ha, triage_poll, None, send_to_user)
+    scheduler = build_scheduler(ha, proactive_poll, None, send_to_user)
     scheduler.start()
 
     logger.info(f"{config.BOT_NAME} is online.")

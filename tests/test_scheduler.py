@@ -47,3 +47,25 @@ async def test_check_user_alerts_silent_when_below_threshold(tmp_path):
     triggered = []
     await check_user_alerts(mock_ha, lambda m: triggered.append(m), alerts_path=str(alerts_file))
     assert len(triggered) == 0
+
+
+async def test_insight_poll_calls_triage_fn():
+    """insight_poll passes home state summary to triage_agent_fn."""
+    from jarvis.scheduler import build_scheduler
+
+    mock_ha = MagicMock()
+    mock_ha.get_states = AsyncMock(return_value=[])
+    mock_ha.get_state_summary = MagicMock(return_value="sensor.temp: 20")
+
+    triage_fn = AsyncMock()
+    send_fn = AsyncMock()
+
+    scheduler = build_scheduler(mock_ha, triage_fn, None, send_fn)
+
+    # Manually trigger insight_poll without starting the scheduler clock
+    jobs = {job.id: job for job in scheduler.get_jobs()}
+    await jobs["insight_poll"].func()
+
+    triage_fn.assert_awaited_once()
+    call_args = triage_fn.call_args[0][0]
+    assert "20" in call_args  # state summary was passed
