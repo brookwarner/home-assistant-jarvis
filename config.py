@@ -21,6 +21,7 @@ class Config:
         "CONVERSATION_MODEL", "openrouter/anthropic/claude-haiku-4.5"
     )
     OPUS_MODEL: str = os.environ.get("OPUS_MODEL", "openrouter/anthropic/claude-opus-4.6")
+    PROACTIVE_MODEL: str = os.environ.get("PROACTIVE_MODEL", "openrouter/anthropic/claude-sonnet-4-6")
     BOT_NAME: str = os.environ.get("BOT_NAME", "Jarvis")
     TIMEZONE: str = os.environ.get("TIMEZONE", "UTC")
     WEBHOOK_PORT: int = int(os.environ.get("WEBHOOK_PORT", "8765"))

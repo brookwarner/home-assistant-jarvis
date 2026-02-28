@@ -15,3 +15,8 @@ def test_config_loads_from_env(monkeypatch):
     assert cfg_module.config.TELEGRAM_BOT_TOKEN == "test_token"
     assert cfg_module.config.TELEGRAM_CHAT_ID == 123456
     assert cfg_module.config.WEBHOOK_PORT == 8765
+
+
+def test_proactive_model_default():
+    from jarvis.config import config
+    assert "sonnet" in config.PROACTIVE_MODEL.lower()
