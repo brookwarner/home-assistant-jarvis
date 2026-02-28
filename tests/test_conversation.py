@@ -247,3 +247,126 @@ async def test_pending_reply_resolved_by_new_message():
         agent._pending_reply.set_result(user_text)
 
     assert agent._pending_reply.result() == "yes"
+
+
+async def test_run_with_tools_uses_model_override():
+    """_run_with_tools uses the model parameter when provided."""
+    from jarvis.agents.conversation import ConversationAgent
+
+    captured_models = []
+    async def capture_completion(**kwargs):
+        captured_models.append(kwargs.get("model"))
+        m = MagicMock()
+        m.choices[0].finish_reason = "stop"
+        m.choices[0].message.content = "SILENT"
+        m.choices[0].message.tool_calls = None
+        return m
+
+    agent = ConversationAgent(MagicMock())
+    with patch("litellm.acompletion", side_effect=capture_completion):
+        msgs = [{"role": "user", "content": "test"}]
+        await agent._run_with_tools(msgs, model="openrouter/anthropic/claude-sonnet-4-6")
+
+    assert captured_models[0] == "openrouter/anthropic/claude-sonnet-4-6"
+
+
+async def test_run_with_tools_default_model():
+    """_run_with_tools uses self._model when no override given."""
+    from jarvis.agents.conversation import ConversationAgent
+
+    captured = []
+    async def capture(**kwargs):
+        captured.append(kwargs.get("model"))
+        m = MagicMock()
+        m.choices[0].finish_reason = "stop"
+        m.choices[0].message.content = "ok"
+        m.choices[0].message.tool_calls = None
+        return m
+
+    agent = ConversationAgent(MagicMock())
+    with patch("litellm.acompletion", side_effect=capture):
+        await agent._run_with_tools([{"role": "user", "content": "hi"}])
+
+    assert captured[0] == agent._model
+
+
+async def test_recent_alerts_tracks_sent_messages():
+    """Messages sent via run_proactive are recorded in _recent_alerts."""
+    from jarvis.agents.conversation import ConversationAgent
+
+    send_fn = AsyncMock()
+    agent = ConversationAgent(MagicMock(), send_fn=send_fn)
+
+    mock_choice = MagicMock()
+    mock_choice.finish_reason = "stop"
+    mock_choice.message.content = "Spa running 4 hours"
+    mock_choice.message.tool_calls = None
+    mock_response = MagicMock()
+    mock_response.choices = [mock_choice]
+
+    with patch("litellm.acompletion", new_callable=AsyncMock, return_value=mock_response):
+        await agent.run_proactive("spa alert", chat_id=123, use_history=False)
+
+    assert len(agent._recent_alerts) == 1
+    assert "Spa running" in agent._recent_alerts[0]
+
+
+async def test_recent_alerts_capped_at_5():
+    """_recent_alerts never exceeds 5 entries."""
+    from jarvis.agents.conversation import ConversationAgent
+
+    send_fn = AsyncMock()
+    agent = ConversationAgent(MagicMock(), send_fn=send_fn)
+
+    for i in range(7):
+        mock_choice = MagicMock()
+        mock_choice.finish_reason = "stop"
+        mock_choice.message.content = f"Alert {i}"
+        mock_choice.message.tool_calls = None
+        mock_response = MagicMock()
+        mock_response.choices = [mock_choice]
+        with patch("litellm.acompletion", new_callable=AsyncMock, return_value=mock_response):
+            await agent.run_proactive(f"event {i}", chat_id=123, use_history=False)
+
+    assert len(agent._recent_alerts) == 5
+
+
+async def test_recent_alerts_not_populated_on_silent():
+    """SILENT responses should not be added to _recent_alerts."""
+    from jarvis.agents.conversation import ConversationAgent
+
+    agent = ConversationAgent(MagicMock(), send_fn=AsyncMock())
+
+    mock_choice = MagicMock()
+    mock_choice.finish_reason = "stop"
+    mock_choice.message.content = "SILENT"
+    mock_choice.message.tool_calls = None
+    mock_response = MagicMock()
+    mock_response.choices = [mock_choice]
+
+    with patch("litellm.acompletion", new_callable=AsyncMock, return_value=mock_response):
+        await agent.run_proactive("routine", chat_id=123, use_history=False)
+
+    assert len(agent._recent_alerts) == 0
+
+
+async def test_run_proactive_passes_model_override():
+    """run_proactive forwards model param to _run_with_tools."""
+    from jarvis.agents.conversation import ConversationAgent
+
+    agent = ConversationAgent(MagicMock(), send_fn=AsyncMock())
+
+    captured = []
+    async def capture(**kwargs):
+        captured.append(kwargs.get("model"))
+        m = MagicMock()
+        m.choices[0].finish_reason = "stop"
+        m.choices[0].message.content = "SILENT"
+        m.choices[0].message.tool_calls = None
+        return m
+
+    with patch("litellm.acompletion", side_effect=capture):
+        await agent.run_proactive("test", chat_id=1, use_history=False,
+                                   model="openrouter/anthropic/claude-sonnet-4-6")
+
+    assert "sonnet" in captured[0].lower()

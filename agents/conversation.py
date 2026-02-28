@@ -3,7 +3,7 @@ import asyncio
 import json
 import logging
 import subprocess
-from collections import defaultdict
+from collections import defaultdict, deque
 from pathlib import Path
 from typing import Any
 import litellm
@@ -473,6 +473,7 @@ class ConversationAgent:
         self._send_fn = send_fn          # async (text: str) -> None
         self._pending_reply: asyncio.Future | None = None
         self._agent_busy = False
+        self._recent_alerts: deque[str] = deque(maxlen=5)
 
     async def reply(self, chat_id: int, user_text: str) -> str:
         self._agent_busy = True
@@ -492,7 +493,7 @@ class ConversationAgent:
         finally:
             self._agent_busy = False
 
-    async def run_proactive(self, context: str, chat_id: int, use_history: bool = True) -> None:
+    async def run_proactive(self, context: str, chat_id: int, use_history: bool = True, model: str | None = None) -> None:
         """
         Run agent from a HA event or scheduler trigger (not a user message).
 
@@ -520,18 +521,20 @@ class ConversationAgent:
             messages = [{"role": "user", "content": f"[PROACTIVE] {context}"}]
 
         try:
-            response_text = await self._run_with_tools(messages)
+            response_text = await self._run_with_tools(messages, model=model)
             if use_history:
                 self._history[chat_id].append({"role": "assistant", "content": response_text})
             stripped = response_text.strip()
             if stripped and stripped.upper() != "SILENT" and self._send_fn:
+                self._recent_alerts.append(stripped[:200])
                 await self._send_fn(stripped)
         except Exception as e:
             logger.error(f"run_proactive failed: {e}")
         finally:
             self._agent_busy = False
 
-    async def _run_with_tools(self, messages: list[dict]) -> str:
+    async def _run_with_tools(self, messages: list[dict], model: str | None = None) -> str:
+        active_model = model or self._model
         # Reload system prompt each call so memory/entity changes are live
         msgs = [{"role": "system", "content": _load_system_prompt()}] + messages
         tool_log: list[tuple[str, dict]] = []
@@ -539,13 +542,13 @@ class ConversationAgent:
 
         while rounds < MAX_TOOL_ROUNDS:
             extra: dict = {}
-            if self._model.startswith("openrouter/"):
+            if active_model.startswith("openrouter/"):
                 from jarvis.config import config
                 if config.OPENROUTER_API_KEY:
                     extra["api_key"] = config.OPENROUTER_API_KEY
 
             response = await litellm.acompletion(
-                model=self._model,
+                model=active_model,
                 messages=msgs,
                 tools=TOOLS,
                 tool_choice="auto",
@@ -583,7 +586,7 @@ class ConversationAgent:
                     msgs.append({"role": "assistant", "content": None})
                     msgs.append({"role": "user", "content": "Based on everything you found, give your answer now."})
                     retry = await litellm.acompletion(
-                        model=self._model, messages=msgs, temperature=0.5, max_tokens=1024, **extra,
+                        model=active_model, messages=msgs, temperature=0.5, max_tokens=1024, **extra,
                     )
                     content = retry.choices[0].message.content or "I checked but couldn't formulate a response."
                 return content + _format_tool_footer(tool_log)
@@ -591,7 +594,7 @@ class ConversationAgent:
         # Hit max tool rounds — force a final response without tools
         msgs.append({"role": "user", "content": "Based on everything you found, give your answer now."})
         response = await litellm.acompletion(
-            model=self._model, messages=msgs, temperature=0.5, max_tokens=1024, **extra,
+            model=active_model, messages=msgs, temperature=0.5, max_tokens=1024, **extra,
         )
         content = response.choices[0].message.content or "I checked but couldn't formulate a response."
         return content + _format_tool_footer(tool_log)
