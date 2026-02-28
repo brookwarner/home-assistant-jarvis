@@ -1,4 +1,5 @@
 from __future__ import annotations
+import asyncio
 import json
 import logging
 import subprocess
@@ -407,11 +408,14 @@ def _format_tool_footer(tool_log: list[tuple[str, dict]]) -> str:
 
 
 class ConversationAgent:
-    def __init__(self, ha_client: Any):
+    def __init__(self, ha_client: Any, send_fn=None):
         from jarvis.config import config
         self._ha = ha_client
         self._model = config.CONVERSATION_MODEL
         self._history: dict[int, list[dict]] = defaultdict(list)
+        self._send_fn = send_fn          # async (text: str) -> None
+        self._pending_reply: asyncio.Future | None = None
+        self._agent_busy = False
 
     async def reply(self, chat_id: int, user_text: str) -> str:
         history = self._history[chat_id]

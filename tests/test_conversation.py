@@ -58,3 +58,18 @@ async def test_reply_maintains_history():
 
     history = agent._history[999]
     assert len(history) >= 2
+
+
+def test_agent_accepts_send_fn():
+    """Agent stores send_fn and starts with no pending reply."""
+    from jarvis.agents.conversation import ConversationAgent
+    from jarvis.ha_client import HAClient
+
+    mock_ha = MagicMock(spec=HAClient)
+    send_fn = AsyncMock()
+
+    agent = ConversationAgent(mock_ha, send_fn=send_fn)
+
+    assert agent._send_fn is send_fn
+    assert agent._pending_reply is None
+    assert agent._agent_busy is False
