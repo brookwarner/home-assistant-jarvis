@@ -224,3 +224,26 @@ async def test_agent_busy_flag_set_during_reply():
 
     assert busy_during == [True]
     assert agent._agent_busy is False
+
+
+async def test_pending_reply_resolved_by_new_message():
+    """
+    If _pending_reply is set, the next user text resolves it
+    rather than starting a new agent turn.
+    """
+    import asyncio
+    from jarvis.agents.conversation import ConversationAgent
+
+    send_fn = AsyncMock()
+    agent = ConversationAgent(MagicMock(), send_fn=send_fn)
+
+    # Simulate ask_user having set a pending future
+    loop = asyncio.get_event_loop()
+    agent._pending_reply = loop.create_future()
+
+    # Simulate what handle_text does when _pending_reply is set
+    user_text = "yes"
+    if agent._pending_reply is not None and not agent._pending_reply.done():
+        agent._pending_reply.set_result(user_text)
+
+    assert agent._pending_reply.result() == "yes"

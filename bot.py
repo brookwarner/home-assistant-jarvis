@@ -44,7 +44,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 ha = HAClient(config.HA_URL, config.HA_TOKEN)
-agent = ConversationAgent(ha)
+agent: ConversationAgent  # initialized in main()
 
 
 async def send_to_user(text: str) -> None:
@@ -62,24 +62,18 @@ async def on_ha_event(event: dict) -> None:
         action = await classify(event, context)
         logger.info(f"Triage decision: {action} for '{event.get('title', '')}'")
 
-        if action == "notify":
+        if action in ("notify", "needs_input"):
             title = event.get("title", "")
             message = event.get("message", "")
-            text = f"**{title}**\n{message}" if title else message
-            await send_to_user(text)
-        elif action == "needs_input":
-            title = event.get("title", "")
-            message = event.get("message", "")
-            question = await agent.reply(
+            await agent.run_proactive(
+                context=f"{title}: {message}",
                 chat_id=config.TELEGRAM_CHAT_ID,
-                user_text=f"[HA EVENT] {title}: {message} — do I need to act on this?",
             )
-            await send_to_user(_strip_markdown(question))
         # "ignore" and "log" → do nothing (already logged above)
     except Exception as e:
         logger.error(f"on_ha_event failed: {e}")
         try:
-            await send_to_user(f"Error processing HA event '{event.get('title', 'unknown')}': {e}")
+            await send_to_user(f"Error handling event: {e}")
         except Exception:
             pass
 
@@ -100,12 +94,24 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         return
     user_text = update.message.text
     logger.info(f"Received text: {user_text[:80]}")
+
+    # If agent is waiting for ask_user input, route this message there
+    if agent._pending_reply is not None and not agent._pending_reply.done():
+        agent._pending_reply.set_result(user_text)
+        return
+
+    # If agent is mid-task (not waiting for input), tell user to wait
+    if agent._agent_busy:
+        await update.message.reply_text("Still working on the last task, just a moment.")
+        return
+
     typing_task = asyncio.create_task(_keep_typing(context.bot, update.effective_chat.id))
     try:
         reply = await agent.reply(chat_id=update.effective_chat.id, user_text=user_text)
     finally:
         typing_task.cancel()
-    await update.message.reply_text(_strip_markdown(reply))
+    if reply and reply.strip():
+        await update.message.reply_text(_strip_markdown(reply))
 
 
 async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -155,6 +161,8 @@ async def main() -> None:
         .build()
     )
     _app_ref[0] = app
+    global agent
+    agent = ConversationAgent(ha, send_fn=send_to_user)
 
     app.add_handler(CommandHandler("briefing", cmd_briefing))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
