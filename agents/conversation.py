@@ -210,6 +210,30 @@ TOOLS = [
     {
         "type": "function",
         "function": {
+            "name": "ask_user",
+            "description": (
+                "Send a question to the user via Telegram and wait for their reply before continuing. "
+                "Use when you need confirmation before taking an action "
+                "(e.g. 'The garage heater is set to frost protection — still turn it off?'). "
+                "Returns the user's reply as a string. "
+                "Do not use in proactive mode ([PROACTIVE] messages) — use send_message instead."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "prompt": {"type": "string", "description": "Question to ask the user"},
+                    "timeout_seconds": {
+                        "type": "integer",
+                        "description": "Seconds to wait for reply (default 120)",
+                    },
+                },
+                "required": ["prompt"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "remember",
             "description": (
                 "Save a fact, preference, or instruction to persistent memory for use in future conversations. "
@@ -419,6 +443,8 @@ def _format_tool_footer(tool_log: list[tuple[str, dict]]) -> str:
             actions.append("added alert")
         elif name == "send_message":
             actions.append("sent message")
+        elif name == "ask_user":
+            actions.append("asked user")
 
     parts: list[str] = []
     if reads > 0:
@@ -542,7 +568,10 @@ class ConversationAgent:
             extra["api_key"] = config.OPENROUTER_API_KEY
 
         # Remove delegate_to_opus from tools to prevent recursion
-        opus_tools = [t for t in TOOLS if t["function"]["name"] != "delegate_to_opus"]
+        opus_tools = [
+            t for t in TOOLS
+            if t["function"]["name"] not in ("delegate_to_opus", "send_message", "ask_user")
+        ]
 
         for _ in range(8):  # Opus gets more rounds
             response = await litellm.acompletion(
@@ -575,6 +604,21 @@ class ConversationAgent:
         )
         return {"opus_result": response.choices[0].message.content or "Done."}
 
+    async def _ask_user_impl(self, prompt: str, timeout: int) -> dict:
+        """Send prompt to user and block until they reply or timeout."""
+        if not self._send_fn:
+            return {"error": "No send function configured"}
+        await self._send_fn(prompt)
+        loop = asyncio.get_event_loop()
+        self._pending_reply = loop.create_future()
+        try:
+            reply = await asyncio.wait_for(self._pending_reply, timeout=timeout)
+            return {"reply": reply}
+        except asyncio.TimeoutError:
+            return {"reply": "[no reply — timed out]"}
+        finally:
+            self._pending_reply = None
+
     async def _execute_tool(self, name: str, inputs: dict) -> Any:
         try:
             if name == "get_state":
@@ -606,6 +650,10 @@ class ConversationAgent:
                     await self._send_fn(inputs.get("text", ""))
                     return {"status": "sent"}
                 return {"error": "No send function configured"}
+            elif name == "ask_user":
+                return await self._ask_user_impl(
+                    inputs.get("prompt", ""), inputs.get("timeout_seconds", 120)
+                )
             elif name == "remember":
                 return _remember(inputs)
             elif name == "read_self":

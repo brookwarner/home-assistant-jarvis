@@ -99,3 +99,41 @@ async def test_send_message_no_send_fn():
     result = await agent._execute_tool("send_message", {"text": "Hello"})
 
     assert "error" in result
+
+
+async def test_ask_user_sends_prompt_and_returns_reply():
+    """ask_user sends the prompt and returns the reply that resolves the future."""
+    import asyncio
+    from jarvis.agents.conversation import ConversationAgent
+    from jarvis.ha_client import HAClient
+
+    send_fn = AsyncMock()
+    agent = ConversationAgent(MagicMock(spec=HAClient), send_fn=send_fn)
+
+    # Simulate user replying after a short delay
+    async def reply_after_delay():
+        await asyncio.sleep(0.05)
+        # At this point _pending_reply should be set — resolve it
+        assert agent._pending_reply is not None
+        agent._pending_reply.set_result("yes please")
+
+    asyncio.create_task(reply_after_delay())
+    result = await agent._execute_tool("ask_user", {"prompt": "Turn off the spa?", "timeout_seconds": 2})
+
+    send_fn.assert_awaited_once_with("Turn off the spa?")
+    assert result == {"reply": "yes please"}
+    assert agent._pending_reply is None  # cleaned up
+
+
+async def test_ask_user_timeout():
+    """ask_user returns timeout message if no reply arrives."""
+    from jarvis.agents.conversation import ConversationAgent
+    from jarvis.ha_client import HAClient
+
+    send_fn = AsyncMock()
+    agent = ConversationAgent(MagicMock(spec=HAClient), send_fn=send_fn)
+
+    result = await agent._execute_tool("ask_user", {"prompt": "Hello?", "timeout_seconds": 0})
+
+    assert "timed out" in result["reply"]
+    assert agent._pending_reply is None
