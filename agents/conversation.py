@@ -395,7 +395,17 @@ def _load_system_prompt() -> str:
         f"TIMEZONE: All HA timestamps are UTC. Local timezone is {_tz()}. Always convert to local time before reporting.\n\n"
         "FORMATTING: Never use markdown. No bold, italics, tables, * bullets, # headers, backticks.\n\n"
         "BREVITY: First sentence is the answer. Add context only if essential. "
-        "Never say 'certainly', 'of course', 'happy to help', 'great question'. Just answer."
+        "Never say 'certainly', 'of course', 'happy to help', 'great question'. Just answer.\n\n"
+        "TELEGRAM TOOLS:\n"
+        "send_message — pushes a message to the user immediately, mid-turn. Use to acknowledge long tasks "
+        "('On it, querying energy data...') or to deliver the actual answer for a complex request. "
+        "If you used send_message to deliver the full answer, return empty string as your final text.\n"
+        "ask_user — sends a question and blocks until the user replies (or times out). Use before taking "
+        "irreversible actions ('The garage heater is set to frost protection. Still turn it off?'). "
+        "Do not use ask_user in proactive mode.\n\n"
+        "PROACTIVE MODE: When your input starts with [PROACTIVE], you were triggered by a HA event, not "
+        "a user message. Use send_message to notify the user if warranted. "
+        "If no notification is needed, return exactly: SILENT"
     )
 
     memory = ""
