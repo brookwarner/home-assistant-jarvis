@@ -589,6 +589,8 @@ class ConversationAgent:
                         model=active_model, messages=msgs, temperature=0.5, max_tokens=1024, **extra,
                     )
                     content = retry.choices[0].message.content or "I checked but couldn't formulate a response."
+                if content.strip().upper() == "SILENT":
+                    return "SILENT"
                 return content + _format_tool_footer(tool_log)
 
         # Hit max tool rounds — force a final response without tools
@@ -597,6 +599,8 @@ class ConversationAgent:
             model=active_model, messages=msgs, temperature=0.5, max_tokens=1024, **extra,
         )
         content = response.choices[0].message.content or "I checked but couldn't formulate a response."
+        if content.strip().upper() == "SILENT":
+            return "SILENT"
         return content + _format_tool_footer(tool_log)
 
     async def _run_opus(self, task: str) -> dict:
