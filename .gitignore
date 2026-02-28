@@ -22,6 +22,9 @@ venv/
 dist/
 build/
 
+# Worktrees
+.worktrees/
+
 # Editor
 .vscode/
 .idea/
