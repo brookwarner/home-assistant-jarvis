@@ -1,9 +1,15 @@
-#!/bin/bash
+#!/bin/sh
 # Jarvis start script
 set -e
 
 JARVIS_DIR=/homeassistant/jarvis
 PYTHON=$JARVIS_DIR/.venv/bin/python
+
+# Ensure Python is available (SSH addon update may have wiped /usr/bin/python3)
+if ! "$PYTHON" --version >/dev/null 2>&1; then
+    echo "Python missing, installing via apk..."
+    apk add --quiet python3 python3-dev py3-pip 2>&1 || true
+fi
 
 # Kill any existing instance holding the webhook port or PID file
 if [ -f "$JARVIS_DIR/jarvis.pid" ]; then

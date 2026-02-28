@@ -232,7 +232,9 @@ def collect_ha() -> dict:
             sys.exit(0)
         ha_token = ""
 
-    return {"ha_url": ha_url, "ha_token": ha_token}
+    print(f"\n  {DIM}Config directory is /homeassistant on HA OS; elsewhere if running standalone{RESET}")
+    ha_config_dir = ask("HA config directory", default="/homeassistant")
+    return {"ha_url": ha_url, "ha_token": ha_token, "ha_config_dir": ha_config_dir}
 
 
 def collect_telegram() -> dict:
@@ -470,6 +472,97 @@ def write_env(answers: dict) -> None:
     print(f"  {GREEN}✓{RESET} Written .env")
 
 
+# ─── HA config injection ─────────────────────────────────────────────────────
+
+SHELL_COMMAND_BLOCK = textwrap.dedent("""
+    shell_command:
+      restart_jarvis: /homeassistant/jarvis/start.sh
+      check_jarvis: >-
+        pid=$(cat /homeassistant/jarvis/jarvis.pid 2>/dev/null);
+        if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then echo "alive"; else echo "dead"; fi
+""").strip()
+
+WATCHDOG_AUTOMATIONS = textwrap.dedent("""
+    - id: jarvis_autostart
+      alias: "Jarvis: auto-start on HA boot"
+      description: "Start Jarvis bot whenever Home Assistant starts"
+      trigger:
+        - platform: homeassistant
+          event: start
+      action:
+        - delay: "00:00:10"
+        - service: shell_command.restart_jarvis
+      mode: single
+
+    - id: jarvis_watchdog
+      alias: "Jarvis: watchdog restart if offline"
+      description: "Check every 5 minutes if Jarvis is running; restart if not (e.g. after SSH addon update)"
+      trigger:
+        - platform: time_pattern
+          minutes: "/5"
+      action:
+        - action: shell_command.check_jarvis
+          response_variable: jarvis_status
+        - condition: template
+          value_template: "{{ jarvis_status.stdout | trim == 'dead' }}"
+        - delay: "00:00:05"
+        - action: shell_command.restart_jarvis
+      mode: single
+""").strip()
+
+
+def configure_ha_integrations(ha_config_dir: str) -> None:
+    """Inject shell_command entries and watchdog automations into HA config files."""
+    config_path = Path(ha_config_dir) / "configuration.yaml"
+    automations_path = Path(ha_config_dir) / "automations.yaml"
+
+    # --- configuration.yaml ---
+    if config_path.exists():
+        config_text = config_path.read_text()
+        needs_restart_jarvis = "restart_jarvis:" not in config_text
+        needs_check_jarvis = "check_jarvis:" not in config_text
+
+        if needs_restart_jarvis or needs_check_jarvis:
+            if "shell_command:" in config_text:
+                # Section exists but entries are missing — can't safely auto-inject into it
+                print(f"  {BOLD}Warning:{RESET} shell_command section already exists in configuration.yaml.")
+                print(f"  Add these entries manually:\n")
+                print(f"    restart_jarvis: /homeassistant/jarvis/start.sh")
+                print(f"    check_jarvis: >-")
+                print(f"      pid=$(cat /homeassistant/jarvis/jarvis.pid 2>/dev/null);")
+                print(f"      if [ -n \"$pid\" ] && kill -0 \"$pid\" 2>/dev/null; then echo \"alive\"; else echo \"dead\"; fi")
+            else:
+                config_path.write_text(config_text.rstrip() + "\n\n" + SHELL_COMMAND_BLOCK + "\n")
+                print(f"  {GREEN}✓{RESET} Added shell_command entries to configuration.yaml")
+        else:
+            print(f"  {GREEN}✓{RESET} shell_command entries already present in configuration.yaml")
+    else:
+        print(f"  {BOLD}Warning:{RESET} configuration.yaml not found at {config_path} — skipping")
+
+    # --- automations.yaml ---
+    needs_autostart = True
+    needs_watchdog = True
+
+    if automations_path.exists():
+        auto_text = automations_path.read_text()
+        needs_autostart = "id: jarvis_autostart" not in auto_text
+        needs_watchdog = "id: jarvis_watchdog" not in auto_text
+        if needs_autostart or needs_watchdog:
+            automations_path.write_text(auto_text.rstrip() + "\n\n" + WATCHDOG_AUTOMATIONS + "\n")
+            added = []
+            if needs_autostart:
+                added.append("jarvis_autostart")
+            if needs_watchdog:
+                added.append("jarvis_watchdog")
+            print(f"  {GREEN}✓{RESET} Added {', '.join(added)} to automations.yaml")
+        else:
+            print(f"  {GREEN}✓{RESET} Jarvis automations already present in automations.yaml")
+    else:
+        automations_path.write_text(WATCHDOG_AUTOMATIONS + "\n")
+        print(f"  {GREEN}✓{RESET} Created automations.yaml with Jarvis automations")
+        print(f"  {DIM}Ensure configuration.yaml contains: automation: !include automations.yaml{RESET}")
+
+
 # ─── Main ────────────────────────────────────────────────────────────────────
 
 def main() -> None:
@@ -530,9 +623,15 @@ def main() -> None:
     (ROOT / "briefing_prompt.md").write_text(generate_briefing_prompt(answers["bot_name"]))
     print(f"  {GREEN}✓{RESET} Written briefing_prompt.md")
 
+    # HA integration — shell_command + watchdog automations
+    if answers.get("ha_config_dir"):
+        heading("Configuring Home Assistant")
+        configure_ha_integrations(answers["ha_config_dir"])
+        print(f"  {DIM}Restart HA Core to apply shell_command changes, then reload automations.{RESET}")
+
     print(f"\n{BOLD}{GREEN}Setup complete!{RESET}")
     print(f"\nStart {answers['bot_name']} with:")
-    print(f"  {DIM}bash start.sh{RESET}\n")
+    print(f"  {DIM}sh start.sh{RESET}\n")
 
 
 if __name__ == "__main__":
