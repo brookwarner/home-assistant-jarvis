@@ -172,11 +172,17 @@ async def main() -> None:
     webhook_runner = await start_server(on_ha_event, config.WEBHOOK_PORT)
 
     # Start scheduler
-    async def proactive_poll(summary: str) -> None:
+    async def proactive_poll(diff_text: str) -> None:
+        recent = list(agent._recent_alerts)
+        context_parts = [f"Home state changes since last poll:\n{diff_text}"]
+        if recent:
+            context_parts.append("Recent alerts sent (avoid repeating these):\n" + "\n".join(f"- {a}" for a in recent))
+        context = "\n\n".join(context_parts)
         await agent.run_proactive(
-            context=f"Periodic home check. Current state:\n{summary}",
+            context=context,
             chat_id=config.TELEGRAM_CHAT_ID,
             use_history=False,   # throwaway context — don't flood conversation history
+            model=config.PROACTIVE_MODEL,
         )
 
     scheduler = build_scheduler(ha, proactive_poll, None, send_to_user)
