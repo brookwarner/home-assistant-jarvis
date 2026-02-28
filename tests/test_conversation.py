@@ -137,3 +137,90 @@ async def test_ask_user_timeout():
 
     assert "timed out" in result["reply"]
     assert agent._pending_reply is None
+
+async def test_run_proactive_sends_response():
+    """run_proactive runs the tool loop and sends the final text via send_fn."""
+    from jarvis.agents.conversation import ConversationAgent
+    from jarvis.ha_client import HAClient
+
+    send_fn = AsyncMock()
+    agent = ConversationAgent(MagicMock(spec=HAClient), send_fn=send_fn)
+
+    mock_choice = MagicMock()
+    mock_choice.finish_reason = "stop"
+    mock_choice.message.content = "Spa has been on 4 hours."
+    mock_choice.message.tool_calls = None
+    mock_response = MagicMock()
+    mock_response.choices = [mock_choice]
+
+    with patch("litellm.acompletion", new_callable=AsyncMock, return_value=mock_response):
+        await agent.run_proactive("spa still running", chat_id=123)
+
+    send_fn.assert_awaited_once_with("Spa has been on 4 hours.")
+    # HA event (use_history=True default) should persist to history
+    assert len(agent._history[123]) == 2  # [PROACTIVE] user msg + assistant response
+
+
+async def test_run_proactive_no_history_for_polls():
+    """run_proactive with use_history=False does not pollute conversation history."""
+    from jarvis.agents.conversation import ConversationAgent
+
+    send_fn = AsyncMock()
+    agent = ConversationAgent(MagicMock(), send_fn=send_fn)
+
+    mock_choice = MagicMock()
+    mock_choice.finish_reason = "stop"
+    mock_choice.message.content = "SILENT"
+    mock_choice.message.tool_calls = None
+    mock_response = MagicMock()
+    mock_response.choices = [mock_choice]
+
+    with patch("litellm.acompletion", new_callable=AsyncMock, return_value=mock_response):
+        await agent.run_proactive("heartbeat check", chat_id=123, use_history=False)
+
+    # History must stay empty — periodic polls must not pollute conversation
+    assert len(agent._history[123]) == 0
+
+
+async def test_run_proactive_suppresses_silent():
+    """run_proactive does not send if agent returns SILENT."""
+    from jarvis.agents.conversation import ConversationAgent
+
+    send_fn = AsyncMock()
+    agent = ConversationAgent(MagicMock(), send_fn=send_fn)
+
+    mock_choice = MagicMock()
+    mock_choice.finish_reason = "stop"
+    mock_choice.message.content = "SILENT"
+    mock_choice.message.tool_calls = None
+    mock_response = MagicMock()
+    mock_response.choices = [mock_choice]
+
+    with patch("litellm.acompletion", new_callable=AsyncMock, return_value=mock_response):
+        await agent.run_proactive("routine check", chat_id=123)
+
+    send_fn.assert_not_awaited()
+
+
+async def test_agent_busy_flag_set_during_reply():
+    """_agent_busy is True while reply is running, False after."""
+    from jarvis.agents.conversation import ConversationAgent
+
+    agent = ConversationAgent(MagicMock())
+    assert agent._agent_busy is False
+
+    busy_during = []
+
+    async def fake_completion(**kwargs):
+        busy_during.append(agent._agent_busy)
+        m = MagicMock()
+        m.choices[0].finish_reason = "stop"
+        m.choices[0].message.content = "done"
+        m.choices[0].message.tool_calls = None
+        return m
+
+    with patch("litellm.acompletion", side_effect=fake_completion):
+        await agent.reply(chat_id=1, user_text="hi")
+
+    assert busy_during == [True]
+    assert agent._agent_busy is False

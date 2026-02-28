@@ -465,6 +465,7 @@ class ConversationAgent:
         self._agent_busy = False
 
     async def reply(self, chat_id: int, user_text: str) -> str:
+        self._agent_busy = True
         history = self._history[chat_id]
         history.append({"role": "user", "content": user_text})
 
@@ -478,6 +479,47 @@ class ConversationAgent:
         except Exception as e:
             logger.error(f"Conversation agent failed: {e}")
             return f"Error: {e}"
+        finally:
+            self._agent_busy = False
+
+    async def run_proactive(self, context: str, chat_id: int, use_history: bool = True) -> None:
+        """
+        Run agent from a HA event or scheduler trigger (not a user message).
+
+        use_history=True  (default) — for HA events. Adds [PROACTIVE] message to
+            shared conversation history so the user can follow up.
+
+        use_history=False — for periodic heartbeat polls. Runs with a throwaway
+            scratch context so polling never floods the conversation history.
+
+        Agent uses send_message for output; final text is also sent unless it is
+        empty or the literal 'SILENT'.
+        """
+        if self._agent_busy:
+            logger.warning("run_proactive skipped — agent busy")
+            return
+        self._agent_busy = True
+
+        if use_history:
+            messages = self._history[chat_id]
+            messages.append({"role": "user", "content": f"[PROACTIVE] {context}"})
+            if len(messages) > MAX_HISTORY:
+                messages[:] = messages[-MAX_HISTORY:]
+        else:
+            # Throwaway context — don't touch shared history at all
+            messages = [{"role": "user", "content": f"[PROACTIVE] {context}"}]
+
+        try:
+            response_text = await self._run_with_tools(messages)
+            if use_history:
+                self._history[chat_id].append({"role": "assistant", "content": response_text})
+            stripped = response_text.strip()
+            if stripped and stripped.upper() != "SILENT" and self._send_fn:
+                await self._send_fn(stripped)
+        except Exception as e:
+            logger.error(f"run_proactive failed: {e}")
+        finally:
+            self._agent_busy = False
 
     async def _run_with_tools(self, messages: list[dict]) -> str:
         # Reload system prompt each call so memory/entity changes are live
