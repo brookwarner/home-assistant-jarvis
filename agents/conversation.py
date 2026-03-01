@@ -408,8 +408,8 @@ def _load_system_prompt() -> str:
         "Do not use ask_user in proactive mode.\n\n"
         "PROACTIVE MODE: When your input starts with [PROACTIVE], you were triggered by a HA event, not "
         "a user message. Use send_message to notify the user if warranted. "
-        "If no notification is needed, end your response with the word SILENT on its own line. "
-        "You may include your reasoning before it — it will be logged but not sent to the user."
+        "If no notification is needed, include the word SILENT on its own line anywhere in your response. "
+        "You may include your reasoning — it will be logged but not sent to the user."
     )
 
     memory = ""
@@ -428,6 +428,16 @@ def _load_system_prompt() -> str:
 
 
 _HUMAN_SERVICE = {"turn_on": "on", "turn_off": "off", "toggle": "toggled"}
+
+
+def _check_silent(content: str) -> tuple[bool, str]:
+    """Return (is_silent, reasoning). SILENT may appear anywhere as a standalone line."""
+    lines = content.strip().split('\n')
+    non_empty = [l.strip() for l in lines if l.strip()]
+    if any(l.upper() == "SILENT" for l in non_empty):
+        reasoning = '\n'.join(l for l in non_empty if l.upper() != "SILENT").strip()
+        return True, reasoning
+    return False, ""
 
 
 def _format_tool_footer(tool_log: list[tuple[str, dict]]) -> str:
@@ -593,12 +603,10 @@ class ConversationAgent:
                         model=active_model, messages=msgs, temperature=0.5, max_tokens=1024, **extra,
                     )
                     content = retry.choices[0].message.content or "I checked but couldn't formulate a response."
-                # Detect SILENT — model ends with SILENT on its own line, may include reasoning before it.
+                # Detect SILENT — may appear anywhere as a standalone line, with reasoning around it.
                 # Log the reasoning for debuggability but don't send it to the user.
-                lines = content.strip().split('\n')
-                last_line = next((l.strip() for l in reversed(lines) if l.strip()), "")
-                if last_line.upper() == "SILENT":
-                    reasoning = content.strip()[:-len(last_line)].strip()
+                is_silent, reasoning = _check_silent(content)
+                if is_silent:
                     if reasoning:
                         logger.info(f"Proactive SILENT reasoning: {reasoning}")
                     return "SILENT"
@@ -610,10 +618,8 @@ class ConversationAgent:
             model=active_model, messages=msgs, temperature=0.5, max_tokens=1024, **extra,
         )
         content = response.choices[0].message.content or "I checked but couldn't formulate a response."
-        lines = content.strip().split('\n')
-        last_line = next((l.strip() for l in reversed(lines) if l.strip()), "")
-        if last_line.upper() == "SILENT":
-            reasoning = content.strip()[:-len(last_line)].strip()
+        is_silent, reasoning = _check_silent(content)
+        if is_silent:
             if reasoning:
                 logger.info(f"Proactive SILENT reasoning: {reasoning}")
             return "SILENT"
