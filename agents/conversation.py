@@ -408,9 +408,8 @@ def _load_system_prompt() -> str:
         "Do not use ask_user in proactive mode.\n\n"
         "PROACTIVE MODE: When your input starts with [PROACTIVE], you were triggered by a HA event, not "
         "a user message. Use send_message to notify the user if warranted. "
-        "If no notification is needed, your response must be the single word SILENT and nothing else — "
-        "no reasoning, no explanation. Your entire response text is sent verbatim to the user, "
-        "so do not write internal thoughts in it. Decide silently, then respond with only SILENT."
+        "If no notification is needed, end your response with the word SILENT on its own line. "
+        "You may include your reasoning before it — it will be logged but not sent to the user."
     )
 
     memory = ""
@@ -594,11 +593,14 @@ class ConversationAgent:
                         model=active_model, messages=msgs, temperature=0.5, max_tokens=1024, **extra,
                     )
                     content = retry.choices[0].message.content or "I checked but couldn't formulate a response."
-                # Detect SILENT — model should return exactly SILENT, but may prepend reasoning.
-                # Check the last non-empty line before appending footer.
+                # Detect SILENT — model ends with SILENT on its own line, may include reasoning before it.
+                # Log the reasoning for debuggability but don't send it to the user.
                 lines = content.strip().split('\n')
                 last_line = next((l.strip() for l in reversed(lines) if l.strip()), "")
                 if last_line.upper() == "SILENT":
+                    reasoning = content.strip()[:-len(last_line)].strip()
+                    if reasoning:
+                        logger.info(f"Proactive SILENT reasoning: {reasoning}")
                     return "SILENT"
                 return content + _format_tool_footer(tool_log)
 
@@ -611,6 +613,9 @@ class ConversationAgent:
         lines = content.strip().split('\n')
         last_line = next((l.strip() for l in reversed(lines) if l.strip()), "")
         if last_line.upper() == "SILENT":
+            reasoning = content.strip()[:-len(last_line)].strip()
+            if reasoning:
+                logger.info(f"Proactive SILENT reasoning: {reasoning}")
             return "SILENT"
         return content + _format_tool_footer(tool_log)
 
