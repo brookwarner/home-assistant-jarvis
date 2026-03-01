@@ -455,16 +455,22 @@ def write_env(answers: dict) -> None:
 
         # ─── AI Providers ────────────────────────────────────────────────────────────
         OPENROUTER_API_KEY={o["openrouter_key"]}
+        # Optional: uncomment to use Anthropic directly instead of via OpenRouter
+        #ANTHROPIC_API_KEY=
+        # Optional: Groq for faster/cheaper triage model
+        #GROQ_API_KEY=
 
         # ─── Models ──────────────────────────────────────────────────────────────────
         TRIAGE_MODEL=openrouter/meta-llama/llama-3.2-3b-instruct:free
         BRIEFING_MODEL=openrouter/anthropic/claude-haiku-4.5
         CONVERSATION_MODEL=openrouter/anthropic/claude-haiku-4.5
         OPUS_MODEL=openrouter/anthropic/claude-opus-4.6
+        PROACTIVE_MODEL=openrouter/anthropic/claude-sonnet-4-6
 
         # ─── Service ─────────────────────────────────────────────────────────────────
         TIMEZONE={o["timezone"]}
         WEBHOOK_PORT=8765
+        WHISPER_MODEL=base
         LOG_LEVEL=INFO
     """).strip() + "\n"
 

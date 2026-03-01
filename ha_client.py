@@ -108,12 +108,18 @@ class HAClient:
                 last_sum = rows[-1]["sum"] or 0.0
                 total = round(last_sum - first_sum, 3)
 
-                # Daily breakdown: group by date (UTC), take max sum per day
+                # Daily breakdown: group by local date, take max sum per day
                 from collections import defaultdict
+                from zoneinfo import ZoneInfo
+                try:
+                    from jarvis.config import config as _cfg
+                    local_tz = ZoneInfo(_cfg.TIMEZONE)
+                except Exception:
+                    local_tz = timezone.utc
                 daily_max: dict = defaultdict(float)
                 daily_min: dict = {}
                 for row in rows:
-                    day = datetime.fromtimestamp(row["start_ts"], tz=timezone.utc).strftime("%Y-%m-%d")
+                    day = datetime.fromtimestamp(row["start_ts"], tz=local_tz).strftime("%Y-%m-%d")
                     s = row["sum"] or 0.0
                     daily_max[day] = max(daily_max[day], s)
                     if day not in daily_min:
