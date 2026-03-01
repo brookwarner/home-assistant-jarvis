@@ -408,7 +408,9 @@ def _load_system_prompt() -> str:
         "Do not use ask_user in proactive mode.\n\n"
         "PROACTIVE MODE: When your input starts with [PROACTIVE], you were triggered by a HA event, not "
         "a user message. Use send_message to notify the user if warranted. "
-        "If no notification is needed, return exactly: SILENT"
+        "If no notification is needed, your response must be the single word SILENT and nothing else — "
+        "no reasoning, no explanation. Your entire response text is sent verbatim to the user, "
+        "so do not write internal thoughts in it. Decide silently, then respond with only SILENT."
     )
 
     memory = ""
@@ -592,7 +594,11 @@ class ConversationAgent:
                         model=active_model, messages=msgs, temperature=0.5, max_tokens=1024, **extra,
                     )
                     content = retry.choices[0].message.content or "I checked but couldn't formulate a response."
-                if content.strip().upper() == "SILENT":
+                # Detect SILENT — model should return exactly SILENT, but may prepend reasoning.
+                # Check the last non-empty line before appending footer.
+                lines = content.strip().split('\n')
+                last_line = next((l.strip() for l in reversed(lines) if l.strip()), "")
+                if last_line.upper() == "SILENT":
                     return "SILENT"
                 return content + _format_tool_footer(tool_log)
 
@@ -602,7 +608,9 @@ class ConversationAgent:
             model=active_model, messages=msgs, temperature=0.5, max_tokens=1024, **extra,
         )
         content = response.choices[0].message.content or "I checked but couldn't formulate a response."
-        if content.strip().upper() == "SILENT":
+        lines = content.strip().split('\n')
+        last_line = next((l.strip() for l in reversed(lines) if l.strip()), "")
+        if last_line.upper() == "SILENT":
             return "SILENT"
         return content + _format_tool_footer(tool_log)
 

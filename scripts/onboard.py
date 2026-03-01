@@ -483,9 +483,6 @@ def write_env(answers: dict) -> None:
 SHELL_COMMAND_BLOCK = textwrap.dedent("""
     shell_command:
       restart_jarvis: /homeassistant/jarvis/start.sh
-      check_jarvis: >-
-        pid=$(cat /homeassistant/jarvis/jarvis.pid 2>/dev/null);
-        if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then echo "alive"; else echo "dead"; fi
 """).strip()
 
 WATCHDOG_AUTOMATIONS = textwrap.dedent("""
@@ -502,16 +499,11 @@ WATCHDOG_AUTOMATIONS = textwrap.dedent("""
 
     - id: jarvis_watchdog
       alias: "Jarvis: watchdog restart if offline"
-      description: "Check every 5 minutes if Jarvis is running; restart if not (e.g. after SSH addon update)"
+      description: "Every 5 minutes, call start.sh — it exits immediately if already running, starts if not"
       trigger:
         - platform: time_pattern
           minutes: "/5"
       action:
-        - action: shell_command.check_jarvis
-          response_variable: jarvis_status
-        - condition: template
-          value_template: "{{ jarvis_status.stdout | trim == 'dead' }}"
-        - delay: "00:00:05"
         - action: shell_command.restart_jarvis
       mode: single
 """).strip()

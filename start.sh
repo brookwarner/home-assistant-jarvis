@@ -11,19 +11,17 @@ if ! "$PYTHON" --version >/dev/null 2>&1; then
     apk add --quiet python3 python3-dev py3-pip 2>&1 || true
 fi
 
-# Kill any existing instance holding the webhook port or PID file
+# Exit early if already running (makes this safe to call from watchdog every 5 min)
 if [ -f "$JARVIS_DIR/jarvis.pid" ]; then
     OLD_PID=$(cat "$JARVIS_DIR/jarvis.pid")
     if kill -0 "$OLD_PID" 2>/dev/null; then
-        echo "Stopping existing Jarvis (pid $OLD_PID)..."
-        kill "$OLD_PID"
-        sleep 2
+        echo "Jarvis already running (pid $OLD_PID)"
+        exit 0
     fi
 fi
 
-# Also free up port 8765 if something else grabbed it
+# Free up port 8765 if something else grabbed it
 fuser -k 8765/tcp 2>/dev/null || true
-sleep 1
 
 echo "Starting Jarvis..."
 PYTHONPATH=/homeassistant nohup "$PYTHON" "$JARVIS_DIR/bot.py" >> "$JARVIS_DIR/jarvis.log" 2>&1 &
