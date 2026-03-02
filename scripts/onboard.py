@@ -132,7 +132,7 @@ def collect_identity() -> dict:
 
 def collect_owner() -> dict:
     heading("Step 2 — About you")
-    name = ask("Your name", required=True)
+    name = ask("Your first name (used by the AI when addressing you)", required=True)
     pronouns = ask_choice(
         "Your pronouns",
         [
@@ -327,6 +327,11 @@ def generate_soul(answers: dict, api_key: str) -> str:
         Reference actual details from the home (features, location, priorities).
         Write as if the AI has lived in this home for years and has real opinions about it.
         Keep it under 1000 words.
+        IMPORTANT: Instead of writing the owner's name ({o["owner_name"]}) and bot name ({o["bot_name"]})
+        literally in the document, use the placeholders {{OWNER_NAME}} and {{BOT_NAME}} everywhere.
+        These are substituted at runtime from environment variables, keeping the file shareable.
+        Example: "I am {{BOT_NAME}}, the AI for {{OWNER_NAME}}'s home."
+
         Do NOT include any preamble or explanation — just the markdown document starting with # Soul.
     """).strip()
 
@@ -444,6 +449,7 @@ def write_env(answers: dict) -> None:
 
         # ─── Identity ────────────────────────────────────────────────────────────────
         BOT_NAME={o["bot_name"]}
+        OWNER_NAME={o["owner_name"]}
 
         # ─── Telegram ────────────────────────────────────────────────────────────────
         TELEGRAM_BOT_TOKEN={o["telegram_token"]}

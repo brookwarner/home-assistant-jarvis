@@ -423,7 +423,10 @@ def _load_system_prompt() -> str:
             memory = f"\n\nYour persistent memory notes:\n{mem}"
 
     if SOUL_PATH.exists():
+        from jarvis.config import config
         soul = SOUL_PATH.read_text()
+        soul = soul.replace("{BOT_NAME}", config.BOT_NAME)
+        soul = soul.replace("{OWNER_NAME}", config.OWNER_NAME)
         return f"{soul}\n\n---\n\n{base}{memory}"
     return (
         f"You are {_bot_name()}, an AI smart home assistant.\n\n"

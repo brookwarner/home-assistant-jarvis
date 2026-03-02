@@ -23,6 +23,7 @@ class Config:
     OPUS_MODEL: str = os.environ.get("OPUS_MODEL", "openrouter/anthropic/claude-opus-4.6")
     PROACTIVE_MODEL: str = os.environ.get("PROACTIVE_MODEL", "openrouter/anthropic/claude-sonnet-4-6")
     BOT_NAME: str = os.environ.get("BOT_NAME", "Jarvis")
+    OWNER_NAME: str = os.environ.get("OWNER_NAME", "the user")
     TIMEZONE: str = os.environ.get("TIMEZONE", "UTC")
     WEBHOOK_PORT: int = int(os.environ.get("WEBHOOK_PORT", "8765"))
     WHISPER_MODEL: str = os.environ.get("WHISPER_MODEL", "base")
