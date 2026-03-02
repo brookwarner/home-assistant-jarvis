@@ -32,6 +32,7 @@ SELF_EDIT_FILES = {
     "soul.md": SOUL_PATH,
     "ha_entities.md": ENTITIES_PATH,
     "briefing_prompt.md": BRIEFING_PROMPT_PATH,
+    "memory.md": MEMORY_PATH,
 }
 
 ALLOWED_CONFIG_FILES = {
@@ -277,14 +278,15 @@ TOOLS = [
             "name": "read_self",
             "description": (
                 "Read one of the bot's own configuration files. "
-                "Available: soul.md (personality), ha_entities.md (known entities), briefing_prompt.md (morning briefing instructions)."
+                "Available: soul.md (personality), ha_entities.md (known entities), "
+                "briefing_prompt.md (morning briefing instructions), memory.md (persistent memory and notification preferences)."
             ),
             "parameters": {
                 "type": "object",
                 "properties": {
                     "filename": {
                         "type": "string",
-                        "enum": ["soul.md", "ha_entities.md", "briefing_prompt.md"],
+                        "enum": ["soul.md", "ha_entities.md", "briefing_prompt.md", "memory.md"],
                     }
                 },
                 "required": ["filename"],
@@ -297,15 +299,17 @@ TOOLS = [
             "name": "write_self",
             "description": (
                 "Overwrite one of the bot's own configuration files. "
-                "Changes to soul.md and briefing_prompt.md take effect on the next message. "
-                "Always read_self first. Available: soul.md, ha_entities.md, briefing_prompt.md."
+                "Use this to update or remove memory entries — read_self first, edit the content, write it back. "
+                "Use 'remember' to append a new note; use write_self to update or remove an existing one. "
+                "Changes take effect on the next message. "
+                "Available: soul.md, ha_entities.md, briefing_prompt.md, memory.md."
             ),
             "parameters": {
                 "type": "object",
                 "properties": {
                     "filename": {
                         "type": "string",
-                        "enum": ["soul.md", "ha_entities.md", "briefing_prompt.md"],
+                        "enum": ["soul.md", "ha_entities.md", "briefing_prompt.md", "memory.md"],
                     },
                     "content": {"type": "string", "description": "Complete new file content"},
                 },
