@@ -430,7 +430,12 @@ _MODE_LAYERS = {
         "on its own line anywhere in your response; your reasoning will be logged but not sent to the user. "
         "Do not repeat anything from 'Recent messages already sent' below. "
         "Work from the change summary you were given. Do not call get_states (it dumps the whole house); "
-        "if you must check one entity, use get_state with a specific id."
+        "if you must check one entity, use get_state with a specific id. "
+        "When the context asks for a recommendation pass, send at most one concrete recommendation. "
+        "Lead with the action, include the reason in plain language, and prefer timing-aware suggestions driven by "
+        "tariff, weather, presence, solar, or currently running loads over generic observations. "
+        "If the context includes 'Selected recommendation:', only phrase that recommendation — "
+        "do not mention suppressed alternatives or invent additional suggestions."
     ),
 }
 
@@ -473,6 +478,25 @@ def _check_silent(content: str) -> tuple[bool, str]:
         reasoning = '\n'.join(l for l in non_empty if l.upper() != "SILENT").strip()
         return True, reasoning
     return False, ""
+
+
+def _parse_recommendation_feedback(user_text: str) -> tuple[str | None, str | None]:
+    text = user_text.lower().strip()
+
+    accepted = ("good idea", "sounds good", "yep", "yes", "do that", "go ahead", "nice one", "makes sense")
+    dismissed = ("stop suggesting", "not useful", "don't tell me this again", "dont tell me this again", "annoying", "stop that")
+    corrected = ("that's wrong", "thats wrong", "wrong", "intentional", "we're home", "were home", "not away", "leave it on", "leave that", "incorrect")
+    ignored = ("ignore that", "skip that", "not now", "later")
+
+    if any(phrase in text for phrase in dismissed):
+        return "dismissed", user_text.strip()
+    if any(phrase in text for phrase in corrected):
+        return "corrected", user_text.strip()
+    if any(phrase in text for phrase in accepted):
+        return "accepted", None
+    if any(phrase in text for phrase in ignored):
+        return "ignored", None
+    return None, None
 
 
 def _format_tool_footer(tool_log: list[tuple[str, dict]]) -> str:
@@ -523,10 +547,31 @@ class ConversationAgent:
         self._pending_reply: asyncio.Future | None = None
         self._agent_busy = False
         self._recent_alerts: deque[str] = deque(maxlen=8)
+        self._last_recommendation_by_chat: dict[int, dict[str, Any]] = {}
 
     def _record_sent(self, text: str) -> None:
         """Remember a full (untruncated) message we just sent, for dedup on later polls."""
         self._recent_alerts.append(text.strip())
+
+    def _maybe_capture_feedback(self, chat_id: int, user_text: str) -> str | None:
+        recommendation = self._last_recommendation_by_chat.get(chat_id)
+        if not recommendation:
+            return None
+
+        feedback_type, note = _parse_recommendation_feedback(user_text)
+        if not feedback_type:
+            return None
+
+        from jarvis.scheduler import update_feedback_store
+
+        update_feedback_store(recommendation, feedback_type, note=note)
+        if feedback_type == "accepted":
+            return "Noted. I'll favour that kind of recommendation."
+        if feedback_type == "ignored":
+            return "Noted. I'll back off on that suggestion."
+        if feedback_type == "dismissed":
+            return "Understood. I'll suppress that kind of suggestion."
+        return "Noted. I'll treat that recommendation as a bad read."
 
     async def reply(self, chat_id: int, user_text: str) -> str:
         self._agent_busy = True
@@ -537,6 +582,10 @@ class ConversationAgent:
             history[:] = history[-MAX_HISTORY:]
 
         try:
+            feedback_response = self._maybe_capture_feedback(chat_id, user_text)
+            if feedback_response:
+                history.append({"role": "assistant", "content": feedback_response})
+                return feedback_response
             response_text = await self._run_with_tools(history)
             history.append({"role": "assistant", "content": response_text})
             return response_text
@@ -546,7 +595,14 @@ class ConversationAgent:
         finally:
             self._agent_busy = False
 
-    async def run_proactive(self, context: str, chat_id: int, use_history: bool = True, model: str | None = None) -> None:
+    async def run_proactive(
+        self,
+        context: str,
+        chat_id: int,
+        use_history: bool = True,
+        model: str | None = None,
+        recommendation_metadata: dict[str, Any] | None = None,
+    ) -> None:
         """
         Run agent from a HA event or scheduler trigger (not a user message).
 
@@ -580,6 +636,8 @@ class ConversationAgent:
             stripped = response_text.strip()
             if stripped and stripped.upper() != "SILENT" and self._send_fn:
                 self._record_sent(stripped)
+                if recommendation_metadata:
+                    self._last_recommendation_by_chat[chat_id] = recommendation_metadata
                 await self._send_fn(stripped)
         except Exception as e:
             logger.error(f"run_proactive failed: {e}")

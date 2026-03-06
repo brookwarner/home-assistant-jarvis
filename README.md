@@ -11,7 +11,7 @@ Built on a Raspberry Pi running [Home Assistant OS](https://www.home-assistant.i
 
 - **Conversational control** — ask natural language questions, get live sensor data, control devices
 - **Morning briefings** — daily summary of home state, weather, energy, water, calendar
-- **Proactive alerts** — monitors sensors and notifies you when thresholds are crossed
+- **Proactive recommendations** — ranks high-signal energy, weather, and presence suggestions instead of only reacting to threshold alerts
 - **Energy & water stats** — queries HA's long-term statistics database for any recorder statistic
 - **Self-editing** — Jarvis can update his own personality (`soul.md`), briefing prompt, and HA automations
 - **Voice support** — send voice messages, transcribed via Whisper (optional)
@@ -23,16 +23,18 @@ Built on a Raspberry Pi running [Home Assistant OS](https://www.home-assistant.i
 ## Architecture
 
 ```
-Telegram ──► bot.py ──► triage.py       (cheap model: classify message type)
-                    ──► conversation.py  (main agent: tools + memory)
-                    ──► briefing.py      (scheduled morning briefing)
-                    ──► scheduler.py     (APScheduler: briefings, insight polls)
-                    ──► webhook_server.py (receives HA events via rest_command)
+Telegram ──► bot.py ──► router.py          (litellm model routing + fallbacks)
+                    ──► agents/triage.py    (cheap model: classify event type)
+                    ──► agents/conversation.py (main agent: tools + memory)
+                    ──► agents/briefing.py  (scheduled morning briefing)
+                    ──► scheduler.py        (APScheduler: briefings, insight polls)
+                    ──► webhook_server.py   (receives HA events via rest_command)
 ```
 
 **Models used (via OpenRouter):**
 - Triage: `llama-3.2-3b-instruct:free` — routes messages, near-zero cost
 - Conversation & Briefing: `claude-haiku-4.5` — fast, cheap, capable
+- Proactive polling: `claude-sonnet-4-6` — evaluates state-change diffs every 15 min
 - Opus sub-agent: `claude-opus-4.6` — delegated for complex reasoning tasks
 
 **Tools available to the conversation agent:**
@@ -43,9 +45,11 @@ Telegram ──► bot.py ──► triage.py       (cheap model: classify messa
 - `get_statistics` — query HA recorder statistics DB (energy, water, etc.)
 - `call_service` — control devices
 - `remember` — write to persistent memory
-- `read_self` / `write_self` — edit soul.md, briefing_prompt.md, ha_entities.md
+- `read_self` / `write_self` — edit soul.md, briefing_prompt.md, ha_entities.md, memory.md
 - `read_ha_config` / `write_ha_config` / `reload_ha_config` — edit HA YAML
 - `add_custom_alert` — set up threshold monitors
+- `send_message` — push a Telegram message mid-turn (progress updates, proactive answers)
+- `ask_user` — send a question and block until the user replies
 - `delegate_to_opus` — hand complex tasks to Opus sub-agent
 
 ---
@@ -201,6 +205,9 @@ The system prompt for morning briefings. Jarvis can edit this himself via `write
 Persistent memory. Jarvis appends facts here when you tell him to remember something.
 Auto-created on first `remember` call.
 
+### recommendation_feedback.json
+Stores per-device and per-recommendation feedback so Jarvis can learn which proactive suggestions are useful, noisy, or wrong.
+
 ---
 
 ## Telegram commands
@@ -238,6 +245,7 @@ With the default model configuration (Haiku for conversation/briefings, free Lla
 - **Conversation**: ~$0.001–0.005 per exchange (Haiku via OpenRouter)
 - **Morning briefing**: ~$0.002–0.01 per briefing
 - **Triage**: essentially free (llama-3.2-3b:free)
+- **Proactive polling**: ~$0.001–0.005 per poll cycle (Sonnet, every 15 min — only runs when state changes)
 - **Opus sub-agent**: ~$0.05–0.20 per delegation (use sparingly)
 
 Running costs are charged to your OpenRouter account, not Anthropic directly.
@@ -248,7 +256,6 @@ Running costs are charged to your OpenRouter account, not Anthropic directly.
 
 PRs welcome. The main things that would make this more useful for others:
 
-- Onboarding script to auto-generate `soul.md` and `ha_entities.md`
 - More tool examples (calendar integration, notification channels)
 - Better test coverage
 - Docker / add-on packaging
