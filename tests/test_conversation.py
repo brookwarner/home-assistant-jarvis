@@ -154,11 +154,21 @@ async def test_run_proactive_sends_response():
     mock_response.choices = [mock_choice]
 
     with patch("litellm.acompletion", new_callable=AsyncMock, return_value=mock_response):
-        await agent.run_proactive("spa still running", chat_id=123)
+        await agent.run_proactive(
+            "spa still running",
+            chat_id=123,
+            recommendation_metadata={
+                "category": "energy",
+                "recommendation_type": "energy.delay_load",
+                "entities": ["switch.spa_pool"],
+                "dedupe_key": "energy:switch.spa_pool:delay_load",
+            },
+        )
 
     send_fn.assert_awaited_once_with("Spa has been on 4 hours.")
     # HA event (use_history=True default) should persist to history
     assert len(agent._history[123]) == 2  # [PROACTIVE] user msg + assistant response
+    assert agent._last_recommendation_by_chat[123]["recommendation_type"] == "energy.delay_load"
 
 
 async def test_run_proactive_no_history_for_polls():
@@ -200,6 +210,69 @@ async def test_run_proactive_suppresses_silent():
         await agent.run_proactive("routine check", chat_id=123)
 
     send_fn.assert_not_awaited()
+
+
+async def test_feedback_reply_updates_store_as_accepted():
+    from jarvis.agents.conversation import ConversationAgent
+
+    agent = ConversationAgent(MagicMock(), send_fn=AsyncMock())
+    agent._last_recommendation_by_chat[1] = {
+        "category": "energy",
+        "recommendation_type": "energy.delay_load",
+        "entities": ["climate.office_heat_pump"],
+        "dedupe_key": "energy:climate.office_heat_pump:delay_load",
+    }
+
+    with patch("jarvis.scheduler.update_feedback_store") as updater:
+        reply = await agent.reply(chat_id=1, user_text="good idea")
+
+    updater.assert_called_once()
+    assert "favour that kind" in reply
+
+
+async def test_feedback_reply_updates_store_as_corrected():
+    from jarvis.agents.conversation import ConversationAgent
+
+    agent = ConversationAgent(MagicMock(), send_fn=AsyncMock())
+    agent._last_recommendation_by_chat[1] = {
+        "category": "presence",
+        "recommendation_type": "presence.stop_when_away",
+        "entities": ["climate.office_heat_pump"],
+        "dedupe_key": "presence:climate.office_heat_pump:stop_when_away",
+    }
+
+    with patch("jarvis.scheduler.update_feedback_store") as updater:
+        reply = await agent.reply(chat_id=1, user_text="that's wrong, we're home")
+
+    updater.assert_called_once()
+    assert updater.call_args[0][1] == "corrected"
+    assert "bad read" in reply
+
+
+async def test_unrelated_message_does_not_update_feedback():
+    from jarvis.agents.conversation import ConversationAgent
+
+    agent = ConversationAgent(MagicMock(), send_fn=AsyncMock())
+    agent._last_recommendation_by_chat[1] = {
+        "category": "presence",
+        "recommendation_type": "presence.stop_when_away",
+        "entities": ["switch.spa_pool"],
+        "dedupe_key": "presence:switch.spa_pool:stop_when_away",
+    }
+
+    mock_choice = MagicMock()
+    mock_choice.finish_reason = "stop"
+    mock_choice.message.content = "Normal answer."
+    mock_choice.message.tool_calls = None
+    mock_response = MagicMock()
+    mock_response.choices = [mock_choice]
+
+    with patch("jarvis.scheduler.update_feedback_store") as updater:
+        with patch("litellm.acompletion", new_callable=AsyncMock, return_value=mock_response):
+            reply = await agent.reply(chat_id=1, user_text="what's the weather?")
+
+    updater.assert_not_called()
+    assert reply == "Normal answer."
 
 
 async def test_agent_busy_flag_set_during_reply():
