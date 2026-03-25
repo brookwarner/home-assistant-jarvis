@@ -20,6 +20,7 @@ def _get_model(agent: str) -> str:
     return {
         "triage": config.TRIAGE_MODEL,
         "briefing": config.BRIEFING_MODEL,
+        "sunday_briefing": config.SUNDAY_BRIEFING_MODEL,
         "conversation": config.CONVERSATION_MODEL,
     }[agent]
 

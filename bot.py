@@ -151,6 +151,19 @@ async def cmd_briefing(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         await update.message.reply_text(f"Briefing failed: {e}")
 
 
+async def cmd_sunday(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Trigger an immediate Sunday weekly briefing."""
+    if update.effective_chat.id != config.TELEGRAM_CHAT_ID:
+        return
+    await context.bot.send_chat_action(chat_id=update.effective_chat.id, action="typing")
+    try:
+        from jarvis.agents.sunday_briefing import generate
+        text = await generate(ha)
+        await update.message.reply_text(_strip_markdown(text))
+    except Exception as e:
+        await update.message.reply_text(f"Sunday briefing failed: {e}")
+
+
 _app_ref: list = [None]
 
 
@@ -165,6 +178,7 @@ async def main() -> None:
     agent = ConversationAgent(ha, send_fn=send_to_user)
 
     app.add_handler(CommandHandler("briefing", cmd_briefing))
+    app.add_handler(CommandHandler("sunday", cmd_sunday))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
     app.add_handler(MessageHandler(filters.VOICE, handle_voice))
 

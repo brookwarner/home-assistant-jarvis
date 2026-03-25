@@ -811,6 +811,27 @@ def build_scheduler(
         except Exception as exc:
             logger.debug(f"Insight poll error: {exc}")
 
+    async def sunday_briefing() -> None:
+        logger.info("Running Sunday weekly briefing")
+        try:
+            from jarvis.agents.sunday_briefing import generate
+            text = await generate(ha_client)
+            await send_fn(text)
+        except Exception as exc:
+            logger.error(f"Sunday briefing failed: {exc}")
+            try:
+                await send_fn(f"Sunday briefing failed: {exc}")
+            except Exception:
+                pass
+
     scheduler.add_job(morning_briefing, "cron", hour=7, minute=30, id="morning_briefing")
+    scheduler.add_job(
+        sunday_briefing,
+        "cron",
+        day_of_week="sun",
+        hour=8,
+        minute=0,
+        id="sunday_briefing",
+    )
     scheduler.add_job(insight_poll, "interval", minutes=poll_interval, id="insight_poll")
     return scheduler

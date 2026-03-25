@@ -28,10 +28,13 @@ ENTITIES_PATH = Path(__file__).parent.parent / "ha_entities.md"
 MEMORY_PATH = Path(__file__).parent.parent / "memory.md"
 BRIEFING_PROMPT_PATH = Path(__file__).parent.parent / "briefing_prompt.md"
 
+SUNDAY_BRIEFING_PROMPT_PATH = Path(__file__).parent.parent / "sunday_briefing_prompt.md"
+
 SELF_EDIT_FILES = {
     "soul.md": SOUL_PATH,
     "ha_entities.md": ENTITIES_PATH,
     "briefing_prompt.md": BRIEFING_PROMPT_PATH,
+    "sunday_briefing_prompt.md": SUNDAY_BRIEFING_PROMPT_PATH,
     "memory.md": MEMORY_PATH,
 }
 
