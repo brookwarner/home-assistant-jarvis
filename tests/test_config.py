@@ -33,3 +33,16 @@ def test_voice_models_default_to_sonnet(monkeypatch):
     importlib.reload(c)
     assert "sonnet" in c.config.BRIEFING_MODEL.lower()
     assert "sonnet" in c.config.CONVERSATION_MODEL.lower()
+
+
+def test_proactive_toggles_from_env(monkeypatch):
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "t")
+    monkeypatch.setenv("TELEGRAM_CHAT_ID", "1")
+    monkeypatch.setenv("HA_TOKEN", "h")
+    monkeypatch.setenv("PROACTIVE_ENABLED", "false")
+    monkeypatch.setenv("POLL_INTERVAL_MIN", "30")
+    import importlib
+    import jarvis.config as c
+    importlib.reload(c)
+    assert c.config.PROACTIVE_ENABLED is False
+    assert c.config.POLL_INTERVAL_MIN == 30

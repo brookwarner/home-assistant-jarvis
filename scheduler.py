@@ -1,6 +1,7 @@
 from __future__ import annotations
 import json
 import logging
+import os
 import re
 from pathlib import Path
 from typing import Callable, Awaitable, Any
@@ -21,13 +22,26 @@ BINARY_DOMAINS = {"binary_sensor", "switch", "lock", "input_boolean"}
 # 9-19 noisy sensor changes per 15-min poll each cost a Sonnet call. Now only an
 # explicit allow-list of entities can trigger a proactive wake-up. Interactive
 # questions still see everything; this only gates UNPROMPTED attention.
-# Tune WATCHED_ENTITY_SUBSTRINGS from real `insight_poll diff` evidence (DEBUG log).
-WATCHED_FULL_DOMAINS = {"lock"}
-WATCHED_ENTITY_SUBSTRINGS = (
+#
+# The allow-list is configurable from the add-on Configuration screen via the
+# PROACTIVE_WATCH / PROACTIVE_WATCH_DOMAINS env vars (comma-separated). Empty/unset
+# falls back to these sensible defaults.
+_DEFAULT_WATCH_SUBSTRINGS = (
     "garage_door", "front_door", "back_door",
     "moisture", "leak", "smoke", "water_sensor",
     "caravan_temperature",
 )
+_DEFAULT_WATCH_DOMAINS = ("lock",)
+
+
+def _csv_env(name: str, default: tuple[str, ...]) -> tuple[str, ...]:
+    raw = os.environ.get(name, "")
+    items = tuple(s.strip() for s in raw.split(",") if s.strip())
+    return items or default
+
+
+WATCHED_ENTITY_SUBSTRINGS = _csv_env("PROACTIVE_WATCH", _DEFAULT_WATCH_SUBSTRINGS)
+WATCHED_FULL_DOMAINS = set(_csv_env("PROACTIVE_WATCH_DOMAINS", _DEFAULT_WATCH_DOMAINS))
 _WATCH_RE = re.compile("|".join(re.escape(s) for s in WATCHED_ENTITY_SUBSTRINGS))
 
 

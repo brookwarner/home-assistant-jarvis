@@ -173,6 +173,8 @@ async def main() -> None:
 
     # Start scheduler
     async def proactive_poll(diff_text: str) -> None:
+        if not config.PROACTIVE_ENABLED:
+            return  # proactive heartbeat turned off in the add-on Configuration screen
         recent = list(agent._recent_alerts)
         context_parts = [f"Home state changes since last poll:\n{diff_text}"]
         if recent:
@@ -188,7 +190,9 @@ async def main() -> None:
             model=config.PROACTIVE_MODEL,
         )
 
-    scheduler = build_scheduler(ha, proactive_poll, None, send_to_user)
+    scheduler = build_scheduler(
+        ha, proactive_poll, None, send_to_user, poll_interval=config.POLL_INTERVAL_MIN
+    )
     scheduler.start()
 
     logger.info(f"{config.BOT_NAME} is online.")

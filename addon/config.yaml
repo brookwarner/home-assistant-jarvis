@@ -1,5 +1,5 @@
 name: Jarvis
-version: "1.0.0"
+version: "1.1.0"
 slug: jarvis
 description: AI smart-home assistant — Telegram bot + proactive HA agent
 url: https://github.com/anthropics/claude-code
@@ -17,3 +17,43 @@ host_network: true
 # and its .env, and can read/write its data files.
 map:
   - config:rw
+# Configuration options surfaced in the add-on's Configuration screen. Anything left
+# blank falls back to /config/jarvis/.env (run.sh only exports non-empty values).
+options:
+  log_level: info
+  proactive_enabled: true
+  proactive_poll_minutes: 15
+  proactive_watch_substrings:
+    - garage_door
+    - front_door
+    - back_door
+    - moisture
+    - leak
+    - smoke
+    - water_sensor
+    - caravan_temperature
+  proactive_watch_domains:
+    - lock
+schema:
+  log_level: list(debug|info|warning|error)
+  proactive_enabled: bool
+  proactive_poll_minutes: int(1,180)
+  proactive_watch_substrings:
+    - str
+  proactive_watch_domains:
+    - str
+  bot_name: str?
+  owner_name: str?
+  timezone: str?
+  triage_model: str?
+  briefing_model: str?
+  conversation_model: str?
+  proactive_model: str?
+  opus_model: str?
+  telegram_bot_token: password?
+  telegram_chat_id: str?
+  ha_url: str?
+  ha_token: password?
+  openrouter_api_key: password?
+  groq_api_key: password?
+  whisper_model: str?

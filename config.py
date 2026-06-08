@@ -31,5 +31,10 @@ class Config:
     WEBHOOK_PORT: int = int(os.environ.get("WEBHOOK_PORT", "8765"))
     WHISPER_MODEL: str = os.environ.get("WHISPER_MODEL", "base")
     LOG_LEVEL: str = os.environ.get("LOG_LEVEL", "INFO")
+    # Proactive heartbeat controls (exposed in the add-on Configuration screen).
+    PROACTIVE_ENABLED: bool = os.environ.get("PROACTIVE_ENABLED", "true").strip().lower() in (
+        "true", "1", "yes", "on",
+    )
+    POLL_INTERVAL_MIN: int = int(os.environ.get("POLL_INTERVAL_MIN", "15"))
 
 config = Config()

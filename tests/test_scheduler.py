@@ -251,3 +251,30 @@ def test_compute_state_diff_pct_threshold():
     last = {"sensor.power": "0.5"}
     _, diff = compute_state_diff(states, last, domains=["sensor"])
     assert len(diff) == 1
+
+
+def test_watch_list_overridable_via_env(monkeypatch):
+    import importlib
+    monkeypatch.setenv("PROACTIVE_WATCH", "spa_temp, pool_ph")
+    monkeypatch.setenv("PROACTIVE_WATCH_DOMAINS", "lock,alarm_control_panel")
+    import jarvis.scheduler as s
+    importlib.reload(s)
+    try:
+        assert s._is_watched("sensor.spa_temp")
+        assert s._is_watched("alarm_control_panel.house")
+        assert s._is_watched("lock.front_door")
+        assert not s._is_watched("binary_sensor.garage_door")  # default list replaced
+    finally:
+        monkeypatch.delenv("PROACTIVE_WATCH", raising=False)
+        monkeypatch.delenv("PROACTIVE_WATCH_DOMAINS", raising=False)
+        importlib.reload(s)  # restore defaults for other tests
+
+
+def test_watch_list_defaults_when_unset(monkeypatch):
+    import importlib
+    monkeypatch.delenv("PROACTIVE_WATCH", raising=False)
+    monkeypatch.delenv("PROACTIVE_WATCH_DOMAINS", raising=False)
+    import jarvis.scheduler as s
+    importlib.reload(s)
+    assert s._is_watched("binary_sensor.garage_door")
+    assert s._is_watched("lock.front_door")
