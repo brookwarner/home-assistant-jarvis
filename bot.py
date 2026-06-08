@@ -38,7 +38,10 @@ from jarvis.webhook_server import start_server
 from jarvis.scheduler import build_scheduler, WATCHED_DOMAINS
 
 logging.basicConfig(
-    level=getattr(logging, config.LOG_LEVEL),
+    # Case-insensitive + safe default: add-on options use lowercase (info/debug/...),
+    # .env historically used uppercase. getattr(logging, "info") would return the
+    # logging.info *function*, not the level — so normalise and fall back to INFO.
+    level=getattr(logging, str(config.LOG_LEVEL).upper(), logging.INFO),
     format="%(asctime)s %(name)s %(levelname)s %(message)s",
 )
 logger = logging.getLogger(__name__)
