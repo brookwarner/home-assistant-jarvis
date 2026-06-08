@@ -1,0 +1,19 @@
+name: Jarvis
+version: "1.0.0"
+slug: jarvis
+description: AI smart-home assistant — Telegram bot + proactive HA agent
+url: https://github.com/anthropics/claude-code
+arch:
+  - aarch64
+init: false
+startup: application
+boot: auto
+# Supervisor restarts the container if the webhook health-check port stops answering.
+watchdog: "tcp://[HOST]:8765"
+# Share the host network so HA's rest_command (localhost:8765) reaches the webhook,
+# the bot reaches the HA API, and the watchdog can probe the port.
+host_network: true
+# Read/write access to /config so the add-on runs the deployed code in /config/jarvis
+# and its .env, and can read/write its data files.
+map:
+  - config:rw

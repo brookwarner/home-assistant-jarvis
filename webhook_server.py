@@ -30,7 +30,10 @@ async def start_server(on_event: Callable[[dict], Awaitable[None]], port: int) -
     app = make_app(on_event)
     runner = web.AppRunner(app)
     await runner.setup()
-    site = web.TCPSite(runner, "127.0.0.1", port)
+    # Bind all interfaces so the Supervisor add-on watchdog (tcp://[HOST]:port) can
+    # health-check the port. On a home LAN behind the router this is fine; HA's
+    # rest_command still reaches it via localhost.
+    site = web.TCPSite(runner, "0.0.0.0", port)
     await site.start()
-    logger.info(f"Webhook server listening on localhost:{port}")
+    logger.info(f"Webhook server listening on 0.0.0.0:{port}")
     return runner
