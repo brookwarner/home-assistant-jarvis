@@ -46,11 +46,32 @@ _WATCH_RE = re.compile("|".join(re.escape(s) for s in WATCHED_ENTITY_SUBSTRINGS)
 
 
 def _is_watched(eid: str) -> bool:
-    """True if this entity is allowed to trigger an unprompted proactive notification."""
+    """True if this entity is allowed to trigger an unprompted proactive notification
+    by pattern (substring) or whole-domain rules. Group membership is checked separately
+    (it needs a live HA lookup) in _get_watch_group_members()."""
     domain = eid.split(".")[0] if "." in eid else ""
     if domain in WATCHED_FULL_DOMAINS:
         return True
     return bool(_WATCH_RE.search(eid))
+
+
+# A HA Group helper is the user-friendly way to curate exactly which entities wake the
+# model: they add entities via HA's native entity picker, and we read the group's members
+# live each poll (no add-on restart). Configurable; empty disables the group path.
+PROACTIVE_WATCH_GROUP = os.environ.get("PROACTIVE_WATCH_GROUP", "group.jarvis_watch").strip()
+
+
+async def _get_watch_group_members(ha_client: Any) -> set[str]:
+    """Live member entity_ids of the configured watch group, or empty set if the group
+    is unset/missing/unreadable (graceful fallback to substring + domain rules)."""
+    if not PROACTIVE_WATCH_GROUP:
+        return set()
+    try:
+        state = await ha_client.get_state(PROACTIVE_WATCH_GROUP)
+        members = (state or {}).get("attributes", {}).get("entity_id") or []
+        return set(members)
+    except Exception:
+        return set()
 
 # Numeric noise thresholds — change must exceed EITHER to be reported
 NUMERIC_ABS_THRESHOLD = 2.0   # absolute units
@@ -196,8 +217,13 @@ def build_scheduler(
             await check_user_alerts(ha_client, send_fn)
 
             states = await ha_client.get_states()
-            # Opt-in: only allow-listed entities may trigger an unprompted notification.
-            watched_states = [s for s in states if _is_watched(s.get("entity_id", ""))]
+            # Opt-in: an entity may trigger an unprompted notification if it's in the
+            # watch Group, matches a substring, or is in a watched domain.
+            group_members = await _get_watch_group_members(ha_client)
+            watched_states = [
+                s for s in states
+                if _is_watched(s.get("entity_id", "")) or s.get("entity_id", "") in group_members
+            ]
             new_snapshot, diff = compute_state_diff(
                 watched_states, _last_snapshot, domains=WATCHED_DOMAINS
             )

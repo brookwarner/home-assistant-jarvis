@@ -278,3 +278,44 @@ def test_watch_list_defaults_when_unset(monkeypatch):
     importlib.reload(s)
     assert s._is_watched("binary_sensor.garage_door")
     assert s._is_watched("lock.front_door")
+
+
+async def test_insight_poll_includes_group_members(monkeypatch):
+    import importlib
+    monkeypatch.setenv("PROACTIVE_WATCH_GROUP", "group.jarvis_watch")
+    from jarvis import scheduler as sched_module
+    importlib.reload(sched_module)
+    try:
+        sched_module._last_snapshot = {"sensor.office_co2": "400"}
+        mock_ha = MagicMock()
+        mock_ha.get_states = AsyncMock(return_value=[
+            {"entity_id": "sensor.office_co2", "state": "900"},  # not matched by substr/domain
+        ])
+        mock_ha.get_state = AsyncMock(
+            return_value={"attributes": {"entity_id": ["sensor.office_co2"]}}
+        )
+        triage_fn = AsyncMock()
+        scheduler = sched_module.build_scheduler(mock_ha, triage_fn, None, AsyncMock())
+        jobs = {job.id: job for job in scheduler.get_jobs()}
+        await jobs["insight_poll"].func()
+        triage_fn.assert_awaited_once()
+        assert "office_co2" in triage_fn.call_args[0][0]
+    finally:
+        monkeypatch.delenv("PROACTIVE_WATCH_GROUP", raising=False)
+        importlib.reload(sched_module)
+
+
+async def test_insight_poll_group_missing_is_graceful():
+    from jarvis import scheduler as sched_module
+    sched_module._last_snapshot = {"binary_sensor.garage_door": "off"}
+    mock_ha = MagicMock()
+    mock_ha.get_states = AsyncMock(return_value=[
+        {"entity_id": "binary_sensor.garage_door", "state": "on"},
+    ])
+    mock_ha.get_state = AsyncMock(side_effect=Exception("no such group"))
+    triage_fn = AsyncMock()
+    scheduler = sched_module.build_scheduler(mock_ha, triage_fn, None, AsyncMock())
+    jobs = {job.id: job for job in scheduler.get_jobs()}
+    await jobs["insight_poll"].func()
+    triage_fn.assert_awaited_once()  # garage_door still watched by substring
+    assert "garage_door" in triage_fn.call_args[0][0]
