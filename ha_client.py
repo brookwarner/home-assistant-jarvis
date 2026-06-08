@@ -29,6 +29,17 @@ class HAClient:
                 resp.raise_for_status()
                 return await resp.json()
 
+    async def get_timezone(self) -> str | None:
+        """Home Assistant's configured timezone (IANA name) from /api/config, or None."""
+        async with aiohttp.ClientSession() as session:
+            async with session.get(
+                f"{self._url}/api/config",
+                headers=self._headers,
+            ) as resp:
+                resp.raise_for_status()
+                data = await resp.json()
+                return data.get("time_zone")
+
     async def call_service(
         self, domain: str, service: str, data: dict | None = None
     ) -> list:

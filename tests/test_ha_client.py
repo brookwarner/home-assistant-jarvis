@@ -68,3 +68,18 @@ async def test_get_states_returns_list(mock_config):
 
     assert len(result) == 2
     assert result[0]["entity_id"] == "sensor.temp"
+
+async def test_get_timezone_reads_ha_config(mock_config):
+    from jarvis.ha_client import HAClient
+    client = HAClient("http://localhost:8123", "ha_token")
+
+    mock_response = MagicMock()
+    mock_response.status = 200
+    mock_response.json = AsyncMock(return_value={"time_zone": "Pacific/Auckland", "version": "x"})
+    mock_response.__aenter__ = AsyncMock(return_value=mock_response)
+    mock_response.__aexit__ = AsyncMock(return_value=False)
+
+    with patch("aiohttp.ClientSession.get", return_value=mock_response):
+        tz = await client.get_timezone()
+
+    assert tz == "Pacific/Auckland"

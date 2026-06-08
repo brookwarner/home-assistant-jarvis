@@ -158,6 +158,16 @@ _app_ref: list = [None]
 
 
 async def main() -> None:
+    # Follow Home Assistant's configured timezone unless TIMEZONE is explicitly set.
+    # config.TIMEZONE is read dynamically everywhere, so setting it here propagates.
+    if not config.TIMEZONE:
+        try:
+            config.TIMEZONE = await ha.get_timezone() or "UTC"
+        except Exception as e:
+            config.TIMEZONE = "UTC"
+            logger.warning(f"Could not read HA timezone, defaulting to UTC: {e}")
+        logger.info(f"Timezone (from Home Assistant): {config.TIMEZONE}")
+
     app = (
         Application.builder()
         .token(config.TELEGRAM_BOT_TOKEN)

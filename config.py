@@ -27,7 +27,9 @@ class Config:
     PROACTIVE_MODEL: str = os.environ.get("PROACTIVE_MODEL", "openrouter/anthropic/claude-sonnet-4-6")
     BOT_NAME: str = os.environ.get("BOT_NAME", "Jarvis")
     OWNER_NAME: str = os.environ.get("OWNER_NAME", "the user")
-    TIMEZONE: str = os.environ.get("TIMEZONE", "UTC")
+    # Blank = follow Home Assistant's configured timezone (fetched at startup in bot.py).
+    # Set explicitly only to override HA.
+    TIMEZONE: str = os.environ.get("TIMEZONE", "")
     WEBHOOK_PORT: int = int(os.environ.get("WEBHOOK_PORT", "8765"))
     WHISPER_MODEL: str = os.environ.get("WHISPER_MODEL", "base")
     LOG_LEVEL: str = os.environ.get("LOG_LEVEL", "INFO")

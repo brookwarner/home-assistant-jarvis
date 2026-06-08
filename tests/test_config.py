@@ -46,3 +46,15 @@ def test_proactive_toggles_from_env(monkeypatch):
     importlib.reload(c)
     assert c.config.PROACTIVE_ENABLED is False
     assert c.config.POLL_INTERVAL_MIN == 30
+
+
+def test_timezone_blank_by_default(monkeypatch):
+    for v in ("TIMEZONE",):
+        monkeypatch.delenv(v, raising=False)
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "t")
+    monkeypatch.setenv("TELEGRAM_CHAT_ID", "1")
+    monkeypatch.setenv("HA_TOKEN", "h")
+    import importlib
+    import jarvis.config as c
+    importlib.reload(c)
+    assert c.config.TIMEZONE == ""  # blank => follow HA at startup
