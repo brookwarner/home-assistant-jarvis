@@ -20,8 +20,8 @@ if [ -f "$JARVIS_DIR/jarvis.pid" ]; then
     fi
 fi
 
-# Free up port 8765 if something else grabbed it
-fuser -k 8765/tcp 2>/dev/null || true
+# Free up port 8765 if something else grabbed it (fuser not available in HA Alpine)
+kill "$(lsof -ti:8765 2>/dev/null)" 2>/dev/null || pkill -f "bot.py" 2>/dev/null || true
 
 echo "Starting Jarvis..."
 PYTHONPATH=/homeassistant nohup "$PYTHON" "$JARVIS_DIR/bot.py" >> "$JARVIS_DIR/jarvis.log" 2>&1 &
