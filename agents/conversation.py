@@ -20,6 +20,11 @@ def _bot_name() -> str:
     from jarvis.config import config
     return config.BOT_NAME
 
+
+def _owner_name() -> str:
+    from jarvis.config import config
+    return config.OWNER_NAME
+
 MAX_HISTORY = 20
 MAX_TOOL_ROUNDS = 5
 
@@ -389,6 +394,7 @@ def _now_str() -> str:
 def _load_system_prompt() -> str:
     """Load system prompt fresh each call so memory and entity updates are picked up."""
     base = (
+        f"Your name is {_bot_name()}. The person you are talking to is named {_owner_name()}.\n\n"
         f"Current local date and time: {_now_str()}\n\n"
         "You have tools to read entity states, control devices, remember things, and edit HA config files.\n"
         "To find entity IDs: use search_entities with a broad keyword. "
