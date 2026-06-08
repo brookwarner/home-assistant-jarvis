@@ -10,6 +10,15 @@ def mock_env(monkeypatch):
                  ("HA_TOKEN","h"),("ANTHROPIC_API_KEY","sk")]:
         monkeypatch.setenv(k, v)
 
+
+@pytest.fixture(autouse=True)
+def _reset_scheduler_state():
+    # The diff snapshot and per-mode cadence gate are module globals; reset between tests.
+    from jarvis import scheduler as s
+    s._last_snapshot = {}
+    s._last_proactive_run = None
+    yield
+
 async def test_check_user_alerts_fires_when_above_threshold(tmp_path, monkeypatch):
     from jarvis.scheduler import check_user_alerts
 
@@ -319,3 +328,44 @@ async def test_insight_poll_group_missing_is_graceful():
     await jobs["insight_poll"].func()
     triage_fn.assert_awaited_once()  # garage_door still watched by substring
     assert "garage_door" in triage_fn.call_args[0][0]
+
+
+async def test_resolve_mode_reads_input_select(monkeypatch):
+    from jarvis import scheduler as s
+    mock_ha = MagicMock()
+    mock_ha.get_state = AsyncMock(return_value={"state": "away"})
+    assert await s.resolve_mode(mock_ha) == "away"
+
+
+async def test_resolve_mode_unknown_falls_back(monkeypatch):
+    from jarvis import scheduler as s
+    mock_ha = MagicMock()
+    mock_ha.get_state = AsyncMock(return_value={"state": "banana"})
+    assert await s.resolve_mode(mock_ha) == "standard"
+
+
+async def test_resolve_mode_missing_entity_falls_back():
+    from jarvis import scheduler as s
+    mock_ha = MagicMock()
+    mock_ha.get_state = AsyncMock(side_effect=Exception("no such entity"))
+    assert await s.resolve_mode(mock_ha) == "standard"
+
+
+def test_is_watched_in_mode_extra_watch():
+    from jarvis.scheduler import _is_watched_in_mode
+    # motion is watched in away, not in standard
+    assert _is_watched_in_mode("binary_sensor.hall_motion", "away")
+    assert not _is_watched_in_mode("binary_sensor.hall_motion", "standard")
+    # weather watched in storm
+    assert _is_watched_in_mode("weather.home", "storm")
+    # base allow-list still applies in any mode
+    assert _is_watched_in_mode("binary_sensor.garage_door", "quiet")
+
+
+def test_mode_poll_min_values():
+    from jarvis.scheduler import _mode_poll_min
+    from jarvis.config import config
+    assert _mode_poll_min("quiet") == 30
+    assert _mode_poll_min("away") == 5
+    assert _mode_poll_min("storm") == 5
+    assert _mode_poll_min("standard") == int(config.POLL_INTERVAL_MIN)

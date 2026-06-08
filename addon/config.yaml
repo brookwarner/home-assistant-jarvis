@@ -1,5 +1,5 @@
 name: Jarvis
-version: "1.2.2"
+version: "1.3.0"
 slug: jarvis
 description: AI smart-home assistant — Telegram bot + proactive HA agent
 url: https://github.com/anthropics/claude-code
@@ -24,6 +24,7 @@ options:
   log_level: info
   proactive_enabled: true
   proactive_poll_minutes: 15
+  default_mode: standard
   proactive_watch_group: group.jarvis_watch
   proactive_watch_substrings:
     - garage_door
@@ -45,6 +46,10 @@ schema:
   log_level: list(debug|info|warning|error)
   proactive_enabled: bool
   proactive_poll_minutes: int(1,180)
+  # Operating mode when the input_select is absent. Switch live via input_select.jarvis_mode
+  # (Dropdown helper) or by telling Jarvis in Telegram ("go quiet", "away mode", ...).
+  default_mode: list(quiet|standard|away|storm)
+  mode_entity: str?
   # The entity_id of a HA Group helper whose members are watched. Create the group via
   # Settings > Devices & Services > Helpers > Group (that editor has the entity picker);
   # members are read live each poll, no restart needed.

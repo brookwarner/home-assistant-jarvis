@@ -3,6 +3,7 @@ import json
 import logging
 import os
 import re
+import time
 from pathlib import Path
 from typing import Callable, Awaitable, Any
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -73,12 +74,91 @@ async def _get_watch_group_members(ha_client: Any) -> set[str]:
     except Exception:
         return set()
 
+# --- Operating modes ---------------------------------------------------------------
+# A mode is a preset over: poll cadence, extra watched entities (merged with the
+# allow-list), and the speak-threshold posture injected into the proactive prompt.
+# Source of truth is a HA input_select read live each poll; falls back to DEFAULT_MODE.
+DEFAULT_MODE = (os.environ.get("DEFAULT_MODE", "standard").strip().lower() or "standard")
+MODE_ENTITY = os.environ.get("MODE_ENTITY", "input_select.jarvis_mode").strip()
+
+MODES: dict[str, dict] = {
+    "quiet": {
+        "poll_min": 30,
+        "extra_substrings": (),
+        "extra_domains": (),
+        "posture": "MODE quiet: only interrupt for a genuine safety emergency "
+                   "(leak, smoke, security/intrusion). Stay silent about everything else.",
+    },
+    "standard": {
+        "poll_min": None,  # inherit config.POLL_INTERVAL_MIN
+        "extra_substrings": (),
+        "extra_domains": (),
+        "posture": "MODE standard: normal vigilance — speak only when something genuinely "
+                   "warrants interrupting.",
+    },
+    "away": {
+        "poll_min": 5,
+        "extra_substrings": ("door", "window", "motion", "lock"),
+        "extra_domains": ("lock",),
+        "posture": "MODE away — nobody is home: treat any door/window/motion/lock/leak/smoke "
+                   "event as notify-worthy and be security-vigilant.",
+    },
+    "storm": {
+        "poll_min": 5,
+        "extra_substrings": ("window", "door", "power", "wind", "weather"),
+        "extra_domains": (),
+        "posture": "MODE storm — severe weather: flag open windows/doors, power issues, and "
+                   "weather-exposed conditions readily.",
+    },
+}
+
+
+def _standard_poll_min() -> int:
+    try:
+        from jarvis.config import config
+        return max(1, int(config.POLL_INTERVAL_MIN))
+    except Exception:
+        return 15
+
+
+def _mode_poll_min(mode: str) -> int:
+    m = MODES.get(mode, MODES["standard"])
+    return m["poll_min"] if m["poll_min"] is not None else _standard_poll_min()
+
+
+async def resolve_mode(ha_client: Any) -> str:
+    """Active mode from MODE_ENTITY (a HA input_select), validated against MODES.
+    Falls back to DEFAULT_MODE when the entity is missing/unreadable/unknown."""
+    fallback = DEFAULT_MODE if DEFAULT_MODE in MODES else "standard"
+    if not MODE_ENTITY:
+        return fallback
+    try:
+        state = await ha_client.get_state(MODE_ENTITY)
+        val = ((state or {}).get("state") or "").strip().lower()
+        return val if val in MODES else fallback
+    except Exception:
+        return fallback
+
+
+def _is_watched_in_mode(eid: str, mode: str) -> bool:
+    """Allow-list check including the active mode's extra watched substrings/domains."""
+    if _is_watched(eid):
+        return True
+    m = MODES.get(mode, MODES["standard"])
+    domain = eid.split(".")[0] if "." in eid else ""
+    if domain in m["extra_domains"]:
+        return True
+    return any(s in eid for s in m["extra_substrings"])
+
+
 # Numeric noise thresholds — change must exceed EITHER to be reported
 NUMERIC_ABS_THRESHOLD = 2.0   # absolute units
 NUMERIC_PCT_THRESHOLD = 0.05  # 5% relative change
 
 # Module-level state snapshot for diff tracking
 _last_snapshot: dict[str, str] = {}
+# Monotonic timestamp of the last proactive poll that actually ran (for per-mode cadence).
+_last_proactive_run: float | None = None
 
 
 def _is_numeric(value: str) -> bool:
@@ -212,29 +292,39 @@ def build_scheduler(
                 pass
 
     async def insight_poll():
-        global _last_snapshot
+        global _last_snapshot, _last_proactive_run
         try:
             await check_user_alerts(ha_client, send_fn)
 
+            # Resolve the active operating mode and enforce its cadence. The job fires at
+            # a fast base interval; we skip ticks that fall inside the mode's window.
+            mode = await resolve_mode(ha_client)
+            now = time.monotonic()
+            if _last_proactive_run is not None and (now - _last_proactive_run) < _mode_poll_min(mode) * 60:
+                return
+            _last_proactive_run = now
+
             states = await ha_client.get_states()
             # Opt-in: an entity may trigger an unprompted notification if it's in the
-            # watch Group, matches a substring, or is in a watched domain.
+            # watch Group, matches the allow-list, or is in the active mode's extra-watch.
             group_members = await _get_watch_group_members(ha_client)
             watched_states = [
                 s for s in states
-                if _is_watched(s.get("entity_id", "")) or s.get("entity_id", "") in group_members
+                if _is_watched_in_mode(s.get("entity_id", ""), mode)
+                or s.get("entity_id", "") in group_members
             ]
-            new_snapshot, diff = compute_state_diff(
-                watched_states, _last_snapshot, domains=WATCHED_DOMAINS
-            )
+            # watched_states is already curated, so no extra domain filter here (lets
+            # mode entities like weather.* through).
+            new_snapshot, diff = compute_state_diff(watched_states, _last_snapshot)
             _last_snapshot = new_snapshot
 
             if not diff:
-                logger.debug("insight_poll: no watched-entity changes, no model call")
+                logger.debug(f"insight_poll[{mode}]: no watched-entity changes, no model call")
                 return
 
-            diff_text = "\n".join(diff)
-            logger.info(f"insight_poll: {len(diff)} watched changes detected")
+            posture = MODES.get(mode, MODES["standard"])["posture"]
+            diff_text = f"{posture}\n\nHome state changes:\n" + "\n".join(diff)
+            logger.info(f"insight_poll[{mode}]: {len(diff)} watched changes detected")
             logger.debug("insight_poll diff:\n" + diff_text)
             await triage_agent_fn(diff_text)
         except Exception as e:
@@ -243,7 +333,9 @@ def build_scheduler(
     # Daily briefing at 07:30 local time (scheduler uses system time — set TZ env var)
     scheduler.add_job(morning_briefing, "cron", hour=7, minute=30, id="morning_briefing")
 
-    # Insight poll every poll_interval minutes (default 15)
-    scheduler.add_job(insight_poll, "interval", minutes=poll_interval, id="insight_poll")
+    # Insight poll fires at a fast base cadence; per-mode cadence is enforced inside via
+    # _last_proactive_run gating (away/storm 5 min, standard = poll_interval, quiet 30).
+    base_interval = max(1, min(5, poll_interval))
+    scheduler.add_job(insight_poll, "interval", minutes=base_interval, id="insight_poll")
 
     return scheduler

@@ -18,6 +18,7 @@ except Exception:
 scalars = {
     'log_level': 'LOG_LEVEL', 'proactive_enabled': 'PROACTIVE_ENABLED',
     'proactive_poll_minutes': 'POLL_INTERVAL_MIN', 'proactive_watch_group': 'PROACTIVE_WATCH_GROUP',
+    'default_mode': 'DEFAULT_MODE', 'mode_entity': 'MODE_ENTITY',
     'bot_name': 'BOT_NAME', 'owner_name': 'OWNER_NAME',
     'whisper_model': 'WHISPER_MODEL',
 }

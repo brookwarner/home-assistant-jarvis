@@ -258,6 +258,28 @@ TOOLS = [
     {
         "type": "function",
         "function": {
+            "name": "set_mode",
+            "description": (
+                "Set Jarvis's operating mode when the user asks (e.g. 'go quiet', 'away mode', "
+                "'switch to storm mode', 'back to normal/standard'). Modes change proactivity: "
+                "quiet = silent except genuine safety; standard = normal; away = security-vigilant "
+                "for when nobody's home; storm = weather-vigilant. Writes the mode to Home Assistant."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "mode": {
+                        "type": "string",
+                        "enum": ["quiet", "standard", "away", "storm"],
+                    }
+                },
+                "required": ["mode"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "delegate_to_opus",
             "description": (
                 "Hand a complex task to the Opus sub-agent (Claude Opus 4.6). "
@@ -498,6 +520,8 @@ def _format_tool_footer(tool_log: list[tuple[str, dict]]) -> str:
             actions.append(f"edited {inputs.get('filename', '?')}")
         elif name == "delegate_to_opus":
             actions.append("delegated to Opus")
+        elif name == "set_mode":
+            actions.append(f"set mode {inputs.get('mode', '?')}")
         elif name == "add_custom_alert":
             actions.append("added alert")
         elif name == "send_message":
@@ -762,6 +786,16 @@ class ConversationAgent:
                 return await self._ha.get_history(inputs["entity_id"], inputs.get("hours", 24))
             elif name == "delegate_to_opus":
                 return await self._run_opus(inputs.get("task", ""))
+            elif name == "set_mode":
+                import os as _os
+                mode = str(inputs.get("mode", "")).strip().lower()
+                if mode not in ("quiet", "standard", "away", "storm"):
+                    return {"error": f"Unknown mode '{mode}'"}
+                entity = _os.environ.get("MODE_ENTITY", "input_select.jarvis_mode")
+                await self._ha.call_service(
+                    "input_select", "select_option", {"entity_id": entity, "option": mode}
+                )
+                return {"status": "ok", "mode": mode}
             elif name == "search_entities":
                 return _search_entities(inputs.get("query", ""))
             elif name == "add_custom_alert":
