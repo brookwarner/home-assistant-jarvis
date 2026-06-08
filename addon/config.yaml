@@ -1,5 +1,5 @@
 name: Jarvis
-version: "1.2.0"
+version: "1.2.1"
 slug: jarvis
 description: AI smart-home assistant — Telegram bot + proactive HA agent
 url: https://github.com/anthropics/claude-code
@@ -36,6 +36,11 @@ options:
     - caravan_temperature
   proactive_watch_domains:
     - lock
+  # Nested groups must be present even when all their fields are optional, or the
+  # add-on fails validation ("Missing option 'models'"). Empty-dict defaults satisfy
+  # that while keeping every field optional (blank -> falls back to .env).
+  models: {}
+  secrets: {}
 schema:
   log_level: list(debug|info|warning|error)
   proactive_enabled: bool
