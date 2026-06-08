@@ -1,6 +1,7 @@
 from __future__ import annotations
 import json
 import logging
+import re
 from pathlib import Path
 from typing import Callable, Awaitable, Any
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -14,6 +15,28 @@ WATCHED_DOMAINS = ["sensor", "binary_sensor", "switch", "climate", "lock"]
 
 # Domains where any state change is meaningful (no noise filtering)
 BINARY_DOMAINS = {"binary_sensor", "switch", "lock", "input_boolean"}
+
+# --- Proactive attention is OPT-IN -------------------------------------------------
+# The old loop watched ALL of WATCHED_DOMAINS and woke the model on any drift, so
+# 9-19 noisy sensor changes per 15-min poll each cost a Sonnet call. Now only an
+# explicit allow-list of entities can trigger a proactive wake-up. Interactive
+# questions still see everything; this only gates UNPROMPTED attention.
+# Tune WATCHED_ENTITY_SUBSTRINGS from real `insight_poll diff` evidence (DEBUG log).
+WATCHED_FULL_DOMAINS = {"lock"}
+WATCHED_ENTITY_SUBSTRINGS = (
+    "garage_door", "front_door", "back_door",
+    "moisture", "leak", "smoke", "water_sensor",
+    "caravan_temperature",
+)
+_WATCH_RE = re.compile("|".join(re.escape(s) for s in WATCHED_ENTITY_SUBSTRINGS))
+
+
+def _is_watched(eid: str) -> bool:
+    """True if this entity is allowed to trigger an unprompted proactive notification."""
+    domain = eid.split(".")[0] if "." in eid else ""
+    if domain in WATCHED_FULL_DOMAINS:
+        return True
+    return bool(_WATCH_RE.search(eid))
 
 # Numeric noise thresholds — change must exceed EITHER to be reported
 NUMERIC_ABS_THRESHOLD = 2.0   # absolute units
@@ -159,17 +182,20 @@ def build_scheduler(
             await check_user_alerts(ha_client, send_fn)
 
             states = await ha_client.get_states()
+            # Opt-in: only allow-listed entities may trigger an unprompted notification.
+            watched_states = [s for s in states if _is_watched(s.get("entity_id", ""))]
             new_snapshot, diff = compute_state_diff(
-                states, _last_snapshot, domains=WATCHED_DOMAINS
+                watched_states, _last_snapshot, domains=WATCHED_DOMAINS
             )
             _last_snapshot = new_snapshot
 
             if not diff:
-                logger.debug("insight_poll: no state changes, skipping triage")
+                logger.debug("insight_poll: no watched-entity changes, no model call")
                 return
 
             diff_text = "\n".join(diff)
-            logger.info(f"insight_poll: {len(diff)} changes detected, calling triage")
+            logger.info(f"insight_poll: {len(diff)} watched changes detected")
+            logger.debug("insight_poll diff:\n" + diff_text)
             await triage_agent_fn(diff_text)
         except Exception as e:
             logger.debug(f"Insight poll error: {e}")

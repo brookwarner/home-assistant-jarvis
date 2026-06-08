@@ -311,14 +311,14 @@ async def test_recent_alerts_tracks_sent_messages():
     assert "Spa running" in agent._recent_alerts[0]
 
 
-async def test_recent_alerts_capped_at_5():
-    """_recent_alerts never exceeds 5 entries."""
+async def test_recent_alerts_capped_at_8():
+    """_recent_alerts never exceeds 8 entries."""
     from jarvis.agents.conversation import ConversationAgent
 
     send_fn = AsyncMock()
     agent = ConversationAgent(MagicMock(), send_fn=send_fn)
 
-    for i in range(7):
+    for i in range(11):
         mock_choice = MagicMock()
         mock_choice.finish_reason = "stop"
         mock_choice.message.content = f"Alert {i}"
@@ -328,7 +328,39 @@ async def test_recent_alerts_capped_at_5():
         with patch("litellm.acompletion", new_callable=AsyncMock, return_value=mock_response):
             await agent.run_proactive(f"event {i}", chat_id=123, use_history=False)
 
-    assert len(agent._recent_alerts) == 5
+    assert len(agent._recent_alerts) == 8
+
+
+def test_recent_alerts_not_truncated():
+    """Full message text is retained for dedup, not cut at 200 chars."""
+    from jarvis.agents.conversation import ConversationAgent
+
+    agent = ConversationAgent(ha_client=MagicMock(), send_fn=None)
+    long_msg = "x" * 500
+    agent._record_sent(long_msg)
+    assert len(agent._recent_alerts[-1]) >= 500
+
+
+def test_prompt_loads_soul_and_drops_terseness():
+    from jarvis.agents import conversation
+    p = conversation._load_system_prompt(mode="conversation")
+    assert "First sentence is the answer" not in p
+    assert "certainly" in p.lower()
+    assert "Current local date and time" not in p
+
+
+def test_prompt_mode_layer_differs():
+    from jarvis.agents import conversation
+    proactive = conversation._load_system_prompt(mode="proactive")
+    convo = conversation._load_system_prompt(mode="conversation")
+    assert "PROACTIVE" in proactive
+    assert "SILENT" in proactive
+    assert proactive != convo
+
+
+def test_proactive_round_cap_is_lower():
+    from jarvis.agents import conversation
+    assert conversation.MAX_PROACTIVE_TOOL_ROUNDS < conversation.MAX_TOOL_ROUNDS
 
 
 async def test_recent_alerts_not_populated_on_silent():

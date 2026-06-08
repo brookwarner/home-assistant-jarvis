@@ -176,7 +176,10 @@ async def main() -> None:
         recent = list(agent._recent_alerts)
         context_parts = [f"Home state changes since last poll:\n{diff_text}"]
         if recent:
-            context_parts.append("Recent alerts sent (avoid repeating these):\n" + "\n".join(f"- {a}" for a in recent))
+            context_parts.append(
+                "Recent messages already sent (do NOT repeat their content):\n"
+                + "\n".join(f"- {a}" for a in recent)
+            )
         context = "\n\n".join(context_parts)
         await agent.run_proactive(
             context=context,

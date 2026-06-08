@@ -18,9 +18,18 @@ def _fallback_prompt() -> str:
 
 
 def _load_system_prompt() -> str:
-    if BRIEFING_PROMPT_PATH.exists():
-        return BRIEFING_PROMPT_PATH.read_text().strip()
-    return _fallback_prompt()
+    # Reuse the conversation voice layer so the briefing sounds like Jarvis,
+    # then append the briefing-specific shape. (The old standalone briefing_prompt.md
+    # never loaded the soul, which is why briefings read voiceless.)
+    from jarvis.agents.conversation import _load_system_prompt as _voice_prompt
+    base = _voice_prompt(mode="conversation")
+    briefing_note = (
+        "\n\n---\n\nBRIEFING MODE: Generate a morning briefing from current home state. "
+        "Lead with the single most interesting or urgent thing. Under 150 words, plain prose, no markdown. "
+        "Report what CHANGED since yesterday — do not re-list standing facts (water %, the same offline "
+        "devices, the same backup time) that were already true in the previous briefing. Don't invent data."
+    )
+    return base + briefing_note
 
 
 async def generate(ha_state_summary: str) -> str:

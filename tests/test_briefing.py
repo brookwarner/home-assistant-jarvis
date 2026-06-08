@@ -32,3 +32,10 @@ async def test_generate_includes_time_context():
 
     full_text = " ".join(m["content"] for m in captured_messages)
     assert "morning" in full_text.lower() or "briefing" in full_text.lower()
+
+
+def test_briefing_prompt_includes_voice():
+    from jarvis.agents import briefing
+    p = briefing._load_system_prompt()
+    assert "briefing" in p.lower()
+    assert "no markdown" in p.lower()

@@ -54,11 +54,11 @@ async def test_insight_poll_calls_triage_fn():
     from jarvis import scheduler as sched_module
     from jarvis.scheduler import build_scheduler
 
-    sched_module._last_snapshot = {"sensor.temp": "15"}
+    sched_module._last_snapshot = {"sensor.caravan_temperature": "15"}
 
     mock_ha = MagicMock()
     mock_ha.get_states = AsyncMock(return_value=[
-        {"entity_id": "sensor.temp", "state": "20"}
+        {"entity_id": "sensor.caravan_temperature", "state": "20"}
     ])
 
     triage_fn = AsyncMock()
@@ -78,11 +78,11 @@ async def test_insight_poll_skips_when_no_diff():
     from jarvis import scheduler as sched_module
     from jarvis.scheduler import build_scheduler
 
-    sched_module._last_snapshot = {"sensor.temp": "20"}
+    sched_module._last_snapshot = {"sensor.caravan_temperature": "20"}
 
     mock_ha = MagicMock()
     mock_ha.get_states = AsyncMock(return_value=[
-        {"entity_id": "sensor.temp", "state": "20"}
+        {"entity_id": "sensor.caravan_temperature", "state": "20"}
     ])
 
     triage_fn = AsyncMock()
@@ -98,11 +98,11 @@ async def test_insight_poll_calls_triage_on_binary_change():
     from jarvis import scheduler as sched_module
     from jarvis.scheduler import build_scheduler
 
-    sched_module._last_snapshot = {"switch.spa": "off"}
+    sched_module._last_snapshot = {"binary_sensor.garage_door": "off"}
 
     mock_ha = MagicMock()
     mock_ha.get_states = AsyncMock(return_value=[
-        {"entity_id": "switch.spa", "state": "on"}
+        {"entity_id": "binary_sensor.garage_door", "state": "on"}
     ])
 
     triage_fn = AsyncMock()
@@ -123,7 +123,7 @@ async def test_insight_poll_first_run_stores_snapshot():
 
     mock_ha = MagicMock()
     mock_ha.get_states = AsyncMock(return_value=[
-        {"entity_id": "sensor.temp", "state": "20"}
+        {"entity_id": "sensor.caravan_temperature", "state": "20"}
     ])
 
     triage_fn = AsyncMock()
@@ -132,7 +132,30 @@ async def test_insight_poll_first_run_stores_snapshot():
     await jobs["insight_poll"].func()
 
     triage_fn.assert_not_awaited()
-    assert sched_module._last_snapshot == {"sensor.temp": "20"}
+    assert sched_module._last_snapshot == {"sensor.caravan_temperature": "20"}
+
+
+def test_is_watched_allowlist():
+    from jarvis.scheduler import _is_watched
+    assert _is_watched("lock.front_door")
+    assert _is_watched("binary_sensor.garage_door")
+    assert _is_watched("sensor.caravan_temperature")
+    assert not _is_watched("sensor.living_room_voltage")
+    assert not _is_watched("input_text.attic_harvest_operator_status")
+
+
+def test_allowlist_filters_states_before_diff():
+    from jarvis.scheduler import compute_state_diff, _is_watched
+    states = [
+        {"entity_id": "binary_sensor.garage_door", "state": "on"},
+        {"entity_id": "sensor.living_room_voltage", "state": "245.0"},
+    ]
+    watched = [s for s in states if _is_watched(s["entity_id"])]
+    # The persistent snapshot only ever holds watched entities, so voltage was never tracked.
+    last = {"binary_sensor.garage_door": "off"}
+    _, diff = compute_state_diff(watched, last, domains=["binary_sensor", "sensor"])
+    assert any("garage_door" in d for d in diff)
+    assert not any("voltage" in d for d in diff)
 
 
 def test_compute_state_diff_first_run_returns_empty():

@@ -1,8 +1,11 @@
 from __future__ import annotations
 import os
+import logging
 from pathlib import Path
 import litellm
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 # Load .env explicitly so keys are available regardless of how the process was launched
 try:
@@ -60,4 +63,13 @@ async def complete(
         **extra,
         **kwargs,
     )
+    usage = getattr(response, "usage", None)
+    if usage is not None:
+        logger.info(
+            "%s tokens: prompt=%s completion=%s total=%s",
+            agent,
+            getattr(usage, "prompt_tokens", "?"),
+            getattr(usage, "completion_tokens", "?"),
+            getattr(usage, "total_tokens", "?"),
+        )
     return response.choices[0].message.content

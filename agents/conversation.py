@@ -27,6 +27,7 @@ def _owner_name() -> str:
 
 MAX_HISTORY = 20
 MAX_TOOL_ROUNDS = 5
+MAX_PROACTIVE_TOOL_ROUNDS = 2
 
 SOUL_PATH = Path(__file__).parent.parent / "soul.md"
 ENTITIES_PATH = Path(__file__).parent.parent / "ha_entities.md"
@@ -391,11 +392,11 @@ def _now_str() -> str:
     return now.strftime("%A %d %B %Y, %H:%M %Z")
 
 
-def _load_system_prompt() -> str:
-    """Load system prompt fresh each call so memory and entity updates are picked up."""
-    base = (
-        f"Your name is {_bot_name()}. The person you are talking to is named {_owner_name()}.\n\n"
-        f"Current local date and time: {_now_str()}\n\n"
+def _operational_layer() -> str:
+    """Tools/timezone/formatting rules. Deliberately NO terseness mandate (it buried the
+    voice) and NO current-time string (kept out of the static prefix so it can be cached;
+    the clock is injected into the per-call user message instead)."""
+    return (
         "You have tools to read entity states, control devices, remember things, and edit HA config files.\n"
         "To find entity IDs: use search_entities with a broad keyword. "
         "If search_entities returns nothing, try a different keyword, then try get_states_by_domain, then try get_state with a guessed ID. "
@@ -403,24 +404,42 @@ def _load_system_prompt() -> str:
         "When taking actions, confirm what you did in one sentence.\n"
         "When asked questions, fetch live data — never guess entity IDs without trying.\n\n"
         f"TIMEZONE: All HA entity timestamps (last_changed, last_updated, etc.) are UTC. "
-        f"Local timezone is {_tz()}. Current local time is {_now_str()}. "
-        f"Always convert UTC to local time before reporting any time or date. "
+        f"Local timezone is {_tz()}. Always convert UTC to local time before reporting any time or date. "
         f"Never report a UTC timestamp as if it were local time — a HA timestamp of 21:00 UTC is not 9pm locally.\n\n"
         "FORMATTING: Never use markdown. No bold, italics, tables, * bullets, # headers, backticks.\n\n"
-        "BREVITY: First sentence is the answer. Add context only if essential. "
-        "Never say 'certainly', 'of course', 'happy to help', 'great question'. Just answer.\n\n"
+        "Never say 'certainly', 'of course', 'happy to help', 'great question'. Don't pad — but do not flatten "
+        "your voice into a terse status report either. Speak as yourself.\n\n"
         "TELEGRAM TOOLS:\n"
         "send_message — pushes a message to the user immediately, mid-turn. Use to acknowledge long tasks "
         "('On it, querying energy data...') or to deliver the actual answer for a complex request. "
         "If you used send_message to deliver the full answer, return empty string as your final text.\n"
         "ask_user — sends a question and blocks until the user replies (or times out). Use before taking "
         "irreversible actions ('The garage heater is set to frost protection. Still turn it off?'). "
-        "Do not use ask_user in proactive mode.\n\n"
-        "PROACTIVE MODE: When your input starts with [PROACTIVE], you were triggered by a HA event, not "
-        "a user message. Use send_message to notify the user if warranted. "
-        "If no notification is needed, include the word SILENT on its own line anywhere in your response. "
-        "You may include your reasoning — it will be logged but not sent to the user."
+        "Do not use ask_user in proactive mode."
     )
+
+
+_MODE_LAYERS = {
+    "conversation": (
+        "You are replying to a message from the user. Answer in your own voice."
+    ),
+    "proactive": (
+        "PROACTIVE MODE: you were triggered by a home event or a scheduled poll, not a user message. "
+        "Silence is the default. Only speak if this genuinely warrants interrupting the user. "
+        "Use send_message to notify if warranted. If no notification is needed, include the word SILENT "
+        "on its own line anywhere in your response; your reasoning will be logged but not sent to the user. "
+        "Do not repeat anything from 'Recent messages already sent' below. "
+        "Work from the change summary you were given. Do not call get_states (it dumps the whole house); "
+        "if you must check one entity, use get_state with a specific id."
+    ),
+}
+
+
+def _load_system_prompt(mode: str = "conversation") -> str:
+    """Assemble voice + operational + mode layers. The result is static across calls so it can be
+    prompt-cached; volatile data (current time, recent messages) is injected via the user message."""
+    op = _operational_layer()
+    mode_layer = _MODE_LAYERS.get(mode, _MODE_LAYERS["conversation"])
 
     memory = ""
     if MEMORY_PATH.exists():
@@ -433,11 +452,14 @@ def _load_system_prompt() -> str:
         soul = SOUL_PATH.read_text()
         soul = soul.replace("{BOT_NAME}", config.BOT_NAME)
         soul = soul.replace("{OWNER_NAME}", config.OWNER_NAME)
-        return f"{soul}\n\n---\n\n{base}{memory}"
-    return (
-        f"You are {_bot_name()}, an AI smart home assistant.\n\n"
-        + base + memory
-    )
+        voice = soul
+    else:
+        voice = (
+            f"You are {_bot_name()}, an AI smart home assistant. "
+            f"The person you are talking to is named {_owner_name()}."
+        )
+
+    return f"{voice}\n\n---\n\n{op}\n\n---\n\n{mode_layer}{memory}"
 
 
 _HUMAN_SERVICE = {"turn_on": "on", "turn_off": "off", "toggle": "toggled"}
@@ -500,12 +522,16 @@ class ConversationAgent:
         self._send_fn = send_fn          # async (text: str) -> None
         self._pending_reply: asyncio.Future | None = None
         self._agent_busy = False
-        self._recent_alerts: deque[str] = deque(maxlen=5)
+        self._recent_alerts: deque[str] = deque(maxlen=8)
+
+    def _record_sent(self, text: str) -> None:
+        """Remember a full (untruncated) message we just sent, for dedup on later polls."""
+        self._recent_alerts.append(text.strip())
 
     async def reply(self, chat_id: int, user_text: str) -> str:
         self._agent_busy = True
         history = self._history[chat_id]
-        history.append({"role": "user", "content": user_text})
+        history.append({"role": "user", "content": f"(now: {_now_str()})\n{user_text}"})
 
         if len(history) > MAX_HISTORY:
             history[:] = history[-MAX_HISTORY:]
@@ -540,34 +566,35 @@ class ConversationAgent:
 
         if use_history:
             messages = self._history[chat_id]
-            messages.append({"role": "user", "content": f"[PROACTIVE] {context}"})
+            messages.append({"role": "user", "content": f"(now: {_now_str()}) [PROACTIVE] {context}"})
             if len(messages) > MAX_HISTORY:
                 messages[:] = messages[-MAX_HISTORY:]
         else:
             # Throwaway context — don't touch shared history at all
-            messages = [{"role": "user", "content": f"[PROACTIVE] {context}"}]
+            messages = [{"role": "user", "content": f"(now: {_now_str()}) [PROACTIVE] {context}"}]
 
         try:
-            response_text = await self._run_with_tools(messages, model=model)
+            response_text = await self._run_with_tools(messages, model=model, mode="proactive")
             if use_history:
                 self._history[chat_id].append({"role": "assistant", "content": response_text})
             stripped = response_text.strip()
             if stripped and stripped.upper() != "SILENT" and self._send_fn:
-                self._recent_alerts.append(stripped[:200])
+                self._record_sent(stripped)
                 await self._send_fn(stripped)
         except Exception as e:
             logger.error(f"run_proactive failed: {e}")
         finally:
             self._agent_busy = False
 
-    async def _run_with_tools(self, messages: list[dict], model: str | None = None) -> str:
+    async def _run_with_tools(self, messages: list[dict], model: str | None = None, mode: str = "conversation") -> str:
         active_model = model or self._model
         # Reload system prompt each call so memory/entity changes are live
-        msgs = [{"role": "system", "content": _load_system_prompt()}] + messages
+        msgs = [{"role": "system", "content": _load_system_prompt(mode)}] + messages
         tool_log: list[tuple[str, dict]] = []
         rounds = 0
 
-        while rounds < MAX_TOOL_ROUNDS:
+        round_cap = MAX_PROACTIVE_TOOL_ROUNDS if mode == "proactive" else MAX_TOOL_ROUNDS
+        while rounds < round_cap:
             extra: dict = {}
             if active_model.startswith("openrouter/"):
                 from jarvis.config import config
