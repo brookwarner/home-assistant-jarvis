@@ -282,7 +282,9 @@ def build_scheduler(
             states = await ha_client.get_states()
             summary = ha_client.get_state_summary(states, domains=WATCHED_DOMAINS)
             from jarvis.agents.briefing import generate
-            text = await generate(summary)
+            from jarvis.anomaly import detect_and_surface
+            anomalies = await detect_and_surface(ha_client)  # [] on any failure
+            text = await generate(summary, anomalies=anomalies)
             await send_fn(text)
         except Exception as e:
             logger.error(f"Morning briefing failed: {e}")
