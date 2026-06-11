@@ -33,7 +33,7 @@ def _get_fallbacks(agent: str) -> list[str] | None:
         fallbacks = []
         if config.GROQ_API_KEY:
             fallbacks.append("groq/llama-3.1-8b-instant")
-        fallbacks.append("claude-haiku-4-5-20251001")
+        fallbacks.append("anthropic/claude-haiku-4-5")
         return fallbacks
     return None
 
@@ -49,10 +49,12 @@ async def complete(
     model = _get_model(agent)
     fallbacks = _get_fallbacks(agent)
 
-    # Pass api_key explicitly for OpenRouter models so auth isn't env-var dependent
+    # Pass api_key explicitly so auth isn't env-var dependent
     extra: dict = {}
     if model.startswith("openrouter/") and config.OPENROUTER_API_KEY:
         extra["api_key"] = config.OPENROUTER_API_KEY
+    elif model.startswith("anthropic/") and config.ANTHROPIC_API_KEY:
+        extra["api_key"] = config.ANTHROPIC_API_KEY
 
     response = await litellm.acompletion(
         model=model,
@@ -63,13 +65,6 @@ async def complete(
         **extra,
         **kwargs,
     )
-    usage = getattr(response, "usage", None)
-    if usage is not None:
-        logger.info(
-            "%s tokens: prompt=%s completion=%s total=%s",
-            agent,
-            getattr(usage, "prompt_tokens", "?"),
-            getattr(usage, "completion_tokens", "?"),
-            getattr(usage, "total_tokens", "?"),
-        )
+    from jarvis.usage import log_completion
+    log_completion(response, agent)
     return response.choices[0].message.content

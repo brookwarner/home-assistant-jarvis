@@ -30,10 +30,13 @@ Telegram ──► bot.py ──► triage.py       (cheap model: classify messa
                     ──► webhook_server.py (receives HA events via rest_command)
 ```
 
-**Models used (via OpenRouter):**
-- Triage: `llama-3.2-3b-instruct:free` — routes messages, near-zero cost
-- Conversation & Briefing: `claude-haiku-4.5` — fast, cheap, capable
-- Opus sub-agent: `claude-opus-4.6` — delegated for complex reasoning tasks
+**Models used (direct Anthropic billing by default):**
+- Triage: `claude-haiku-4-5` — routes messages, cheap and reliable
+- Conversation & Briefing: `claude-haiku-4-5` — fast, cheap, capable
+- Proactive polling: `claude-haiku-4-5` — evaluates state-change diffs (only when the local recommendation engine clears its score threshold)
+- Opus sub-agent: `claude-opus-4-6` — delegated for complex reasoning tasks
+
+Every model string is overridable via `.env` (`TRIAGE_MODEL`, `CONVERSATION_MODEL`, etc.). Set them to the `openrouter/...` equivalents if you'd rather route through OpenRouter. Per-call cost and token usage are logged (`jarvis.usage`), with a running session total.
 
 **Tools available to the conversation agent:**
 - `get_state` / `get_states_by_domain` — live entity states
@@ -234,13 +237,14 @@ cd /homeassistant/jarvis
 
 ## Cost
 
-With the default model configuration (Haiku for conversation/briefings, free Llama for triage):
-- **Conversation**: ~$0.001–0.005 per exchange (Haiku via OpenRouter)
+With the default model configuration (Haiku for triage/conversation/briefing/proactive):
+- **Conversation**: ~$0.001–0.005 per exchange (Haiku)
 - **Morning briefing**: ~$0.002–0.01 per briefing
-- **Triage**: essentially free (llama-3.2-3b:free)
+- **Triage**: ~$0.0001 per message (Haiku, ~10 output tokens)
+- **Proactive polling**: ~$0.001–0.005 per poll cycle — only invokes a model when state changes *and* the local recommendation engine clears its score threshold; most cycles cost nothing
 - **Opus sub-agent**: ~$0.05–0.20 per delegation (use sparingly)
 
-Running costs are charged to your OpenRouter account, not Anthropic directly.
+Running costs are billed to your Anthropic account directly (no OpenRouter markup) under the default config. Per-call costs are logged by the `jarvis.usage` logger so you can see exactly where the money goes instead of reading it off the provider dashboard. Switching the proactive model to `claude-sonnet-4-6` raises its quality but costs ~10x more per invocation.
 
 ---
 
