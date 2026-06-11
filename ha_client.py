@@ -182,6 +182,24 @@ class HAClient:
 
         return await asyncio.get_event_loop().run_in_executor(None, _query)
 
+    async def list_statistic_ids(self) -> list[str]:
+        """All statistic_ids that have long-term statistics (for anomaly discovery)."""
+        import sqlite3
+        import asyncio
+
+        DB_PATH = "/homeassistant/home-assistant_v2.db"
+
+        def _query() -> list[str]:
+            conn = sqlite3.connect(f"file:{DB_PATH}?mode=ro", uri=True)
+            try:
+                cur = conn.cursor()
+                cur.execute("SELECT statistic_id FROM statistics_meta")
+                return [r[0] for r in cur.fetchall()]
+            finally:
+                conn.close()
+
+        return await asyncio.get_event_loop().run_in_executor(None, _query)
+
     async def get_entities_by_domain(self, domain: str) -> list[dict]:
         all_states = await self.get_states()
         return [s for s in all_states if s["entity_id"].startswith(f"{domain}.")]
