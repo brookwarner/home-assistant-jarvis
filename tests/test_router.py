@@ -35,5 +35,7 @@ async def test_triage_model_uses_configured_model(mock_env):
     with patch("litellm.acompletion", new_callable=AsyncMock, return_value=mock_resp) as mock_ac:
         await router.complete("triage", [{"role": "user", "content": "test"}])
 
+    from jarvis.config import config
     call_kwargs = mock_ac.call_args[1]
-    assert "llama" in call_kwargs["model"] or "openrouter" in call_kwargs["model"]
+    # Triage uses whatever TRIAGE_MODEL resolves to (defaults to direct-Anthropic Haiku).
+    assert call_kwargs["model"] == config.TRIAGE_MODEL

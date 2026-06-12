@@ -101,7 +101,7 @@ def _ha_request(url: str, token: str, method: str = "GET", body: dict | None = N
         return json.loads(resp.read())
 
 
-def _openrouter_request(api_key: str, messages: list[dict], model: str, max_tokens: int = 4096) -> str:
+def _anthropic_request(api_key: str, messages: list[dict], model: str, max_tokens: int = 4096) -> str:
     body = {
         "model": model,
         "messages": messages,
@@ -109,17 +109,18 @@ def _openrouter_request(api_key: str, messages: list[dict], model: str, max_toke
         "temperature": 0.7,
     }
     req = urllib.request.Request(
-        "https://openrouter.ai/api/v1/chat/completions",
+        "https://api.anthropic.com/v1/messages",
         data=json.dumps(body).encode(),
         headers={
-            "Authorization": f"Bearer {api_key}",
+            "x-api-key": api_key,
+            "anthropic-version": "2023-06-01",
             "Content-Type": "application/json",
         },
         method="POST",
     )
     with urllib.request.urlopen(req, timeout=60) as resp:
         result = json.loads(resp.read())
-    return result["choices"][0]["message"]["content"]
+    return result["content"][0]["text"]
 
 
 # ─── Section collectors ──────────────────────────────────────────────────────
@@ -248,9 +249,10 @@ def collect_telegram() -> dict:
 
 def collect_ai() -> dict:
     heading("Step 8 — AI provider")
-    print(f"  {DIM}Get an OpenRouter key at: https://openrouter.ai/keys{RESET}")
-    openrouter_key = ask("OpenRouter API key", required=True)
-    return {"openrouter_key": openrouter_key}
+    print(f"  {DIM}Defaults bill Anthropic directly (no OpenRouter markup, reliable prompt caching).{RESET}")
+    print(f"  {DIM}Get an Anthropic key at: https://console.anthropic.com/settings/keys{RESET}")
+    anthropic_key = ask("Anthropic API key", required=True)
+    return {"anthropic_key": anthropic_key}
 
 
 # ─── Generators ─────────────────────────────────────────────────────────────
@@ -337,10 +339,10 @@ def generate_soul(answers: dict, api_key: str) -> str:
 
     print("\n  Generating personalised soul.md...", end="", flush=True)
     try:
-        result = _openrouter_request(
+        result = _anthropic_request(
             api_key,
             [{"role": "user", "content": prompt}],
-            model="openrouter/anthropic/claude-sonnet-4-6",
+            model="claude-sonnet-4-6",
             max_tokens=2000,
         )
         print(f" {GREEN}✓{RESET}")
@@ -460,18 +462,19 @@ def write_env(answers: dict) -> None:
         HA_TOKEN={o["ha_token"]}
 
         # ─── AI Providers ────────────────────────────────────────────────────────────
-        OPENROUTER_API_KEY={o["openrouter_key"]}
-        # Optional: uncomment to use Anthropic directly instead of via OpenRouter
-        #ANTHROPIC_API_KEY=
-        # Optional: Groq for faster/cheaper triage model
+        # Defaults bill Anthropic directly (no OpenRouter markup, reliable prompt caching).
+        ANTHROPIC_API_KEY={o["anthropic_key"]}
+        # Optional: only needed if you switch the model strings below back to openrouter/*
+        #OPENROUTER_API_KEY=
+        # Optional: Groq for faster/cheaper triage model (OpenRouter models only)
         #GROQ_API_KEY=
 
         # ─── Models ──────────────────────────────────────────────────────────────────
-        TRIAGE_MODEL=openrouter/meta-llama/llama-3.2-3b-instruct:free
-        BRIEFING_MODEL=openrouter/anthropic/claude-haiku-4.5
-        CONVERSATION_MODEL=openrouter/anthropic/claude-haiku-4.5
-        OPUS_MODEL=openrouter/anthropic/claude-opus-4.6
-        PROACTIVE_MODEL=openrouter/anthropic/claude-sonnet-4-6
+        TRIAGE_MODEL=anthropic/claude-haiku-4-5
+        BRIEFING_MODEL=anthropic/claude-haiku-4-5
+        CONVERSATION_MODEL=anthropic/claude-haiku-4-5
+        PROACTIVE_MODEL=anthropic/claude-haiku-4-5
+        OPUS_MODEL=anthropic/claude-opus-4-6
 
         # ─── Service ─────────────────────────────────────────────────────────────────
         TIMEZONE={o["timezone"]}
@@ -612,7 +615,7 @@ def main() -> None:
     write_env(answers)
 
     # soul.md
-    soul = generate_soul(answers, answers["openrouter_key"])
+    soul = generate_soul(answers, answers["anthropic_key"])
     (ROOT / "soul.md").write_text(soul + "\n")
     print(f"  {GREEN}✓{RESET} Written soul.md")
 

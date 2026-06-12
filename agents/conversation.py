@@ -7,6 +7,7 @@ from collections import defaultdict, deque
 from pathlib import Path
 from typing import Any
 import litellm
+from jarvis.usage import log_completion
 
 logger = logging.getLogger(__name__)
 
@@ -617,14 +618,15 @@ class ConversationAgent:
         tool_log: list[tuple[str, dict]] = []
         rounds = 0
 
+        from jarvis.config import config
+        extra: dict = {}
+        if active_model.startswith("openrouter/") and config.OPENROUTER_API_KEY:
+            extra["api_key"] = config.OPENROUTER_API_KEY
+        elif active_model.startswith("anthropic/") and config.ANTHROPIC_API_KEY:
+            extra["api_key"] = config.ANTHROPIC_API_KEY
+
         round_cap = MAX_PROACTIVE_TOOL_ROUNDS if mode == "proactive" else MAX_TOOL_ROUNDS
         while rounds < round_cap:
-            extra: dict = {}
-            if active_model.startswith("openrouter/"):
-                from jarvis.config import config
-                if config.OPENROUTER_API_KEY:
-                    extra["api_key"] = config.OPENROUTER_API_KEY
-
             response = await litellm.acompletion(
                 model=active_model,
                 messages=msgs,
@@ -634,6 +636,7 @@ class ConversationAgent:
                 max_tokens=1024,
                 **extra,
             )
+            log_completion(response, "conversation")
 
             choice = response.choices[0]
             msg = choice.message
@@ -666,6 +669,7 @@ class ConversationAgent:
                     retry = await litellm.acompletion(
                         model=active_model, messages=msgs, temperature=0.5, max_tokens=1024, **extra,
                     )
+                    log_completion(retry, "conversation")
                     content = retry.choices[0].message.content or "I checked but couldn't formulate a response."
                 # Detect SILENT — may appear anywhere as a standalone line, with reasoning around it.
                 # Log the reasoning for debuggability but don't send it to the user.
@@ -681,6 +685,7 @@ class ConversationAgent:
         response = await litellm.acompletion(
             model=active_model, messages=msgs, temperature=0.5, max_tokens=1024, **extra,
         )
+        log_completion(response, "conversation")
         content = response.choices[0].message.content or "I checked but couldn't formulate a response."
         is_silent, reasoning = _check_silent(content)
         if is_silent:
@@ -711,6 +716,8 @@ class ConversationAgent:
         extra: dict = {}
         if config.OPUS_MODEL.startswith("openrouter/") and config.OPENROUTER_API_KEY:
             extra["api_key"] = config.OPENROUTER_API_KEY
+        elif config.OPUS_MODEL.startswith("anthropic/") and config.ANTHROPIC_API_KEY:
+            extra["api_key"] = config.ANTHROPIC_API_KEY
 
         # Remove delegate_to_opus from tools to prevent recursion
         opus_tools = [
@@ -728,6 +735,7 @@ class ConversationAgent:
                 max_tokens=4096,
                 **extra,
             )
+            log_completion(response, "opus")
             choice = response.choices[0]
             msg = choice.message
 
@@ -747,6 +755,7 @@ class ConversationAgent:
         response = await litellm.acompletion(
             model=config.OPUS_MODEL, messages=msgs, temperature=0.3, max_tokens=4096, **extra,
         )
+        log_completion(response, "opus")
         return {"opus_result": response.choices[0].message.content or "Done."}
 
     async def _ask_user_impl(self, prompt: str, timeout: int) -> dict:
