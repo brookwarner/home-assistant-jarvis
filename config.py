@@ -23,7 +23,7 @@ class Config:
     OPUS_MODEL: str = os.environ.get("OPUS_MODEL", "openrouter/anthropic/claude-opus-4.6")
     PROACTIVE_MODEL: str = os.environ.get("PROACTIVE_MODEL", "openrouter/anthropic/claude-sonnet-4-6")
     SUNDAY_BRIEFING_MODEL: str = os.environ.get(
-        "SUNDAY_BRIEFING_MODEL", "openrouter/anthropic/claude-sonnet-4-6"
+        "SUNDAY_BRIEFING_MODEL", "anthropic/claude-haiku-4-5"
     )
     BOT_NAME: str = os.environ.get("BOT_NAME", "Jarvis")
     OWNER_NAME: str = os.environ.get("OWNER_NAME", "the user")
