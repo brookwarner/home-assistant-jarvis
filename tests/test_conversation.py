@@ -363,6 +363,122 @@ def test_proactive_round_cap_is_lower():
     assert conversation.MAX_PROACTIVE_TOOL_ROUNDS < conversation.MAX_TOOL_ROUNDS
 
 
+async def test_check_anomalies_tool_returns_anomalies(monkeypatch):
+    """check_anomalies wraps anomaly.detect_and_surface and returns its descriptors."""
+    from jarvis.agents.conversation import ConversationAgent
+
+    agent = ConversationAgent(MagicMock())
+
+    async def fake_detect(ha):
+        return ["water: 900 L yesterday vs ~300 L typical (+600 L, 3.0x)"]
+
+    monkeypatch.setattr("jarvis.anomaly.detect_and_surface", fake_detect)
+    result = await agent._execute_tool("check_anomalies", {})
+
+    assert result["anomalies"]
+    assert "water" in result["anomalies"][0]
+
+
+async def test_check_anomalies_tool_empty(monkeypatch):
+    """check_anomalies returns an explanatory note when nothing deviates."""
+    from jarvis.agents.conversation import ConversationAgent
+
+    agent = ConversationAgent(MagicMock())
+
+    async def fake_detect(ha):
+        return []
+
+    monkeypatch.setattr("jarvis.anomaly.detect_and_surface", fake_detect)
+    result = await agent._execute_tool("check_anomalies", {})
+
+    assert result["anomalies"] == []
+    assert "note" in result
+
+
+def test_collect_changes_mtime_fallback(tmp_path):
+    """Non-git dir falls back to recently-modified files, skipping junk."""
+    from jarvis.agents import conversation
+
+    (tmp_path / "a.txt").write_text("hi")
+    (tmp_path / "b.py").write_text("x = 1")
+    junk = tmp_path / "__pycache__"
+    junk.mkdir()
+    (junk / "x.pyc").write_text("nope")
+
+    result = conversation._collect_changes(tmp_path, 10)
+
+    assert result["source"] == "mtime"
+    files = [f["file"] for f in result["recent_files"]]
+    assert "a.txt" in files and "b.py" in files
+    assert not any("x.pyc" in f for f in files)
+
+
+def test_collect_changes_uses_git(tmp_path):
+    """A real git repo returns commit log, not mtime."""
+    import shutil
+    import subprocess as sp
+
+    if not shutil.which("git"):
+        pytest.skip("git not available")
+
+    sp.run(["git", "init"], cwd=tmp_path, capture_output=True)
+    sp.run(["git", "config", "user.email", "t@t"], cwd=tmp_path, capture_output=True)
+    sp.run(["git", "config", "user.name", "t"], cwd=tmp_path, capture_output=True)
+    (tmp_path / "f.txt").write_text("hi")
+    sp.run(["git", "add", "."], cwd=tmp_path, capture_output=True)
+    sp.run(["git", "commit", "-m", "initial commit"], cwd=tmp_path, capture_output=True)
+
+    from jarvis.agents import conversation
+    result = conversation._collect_changes(tmp_path, 5)
+
+    assert result["source"] == "git"
+    assert any("initial commit" in c for c in result["commits"])
+
+
+async def test_recent_changes_tool_runs_against_repo():
+    """recent_changes tool returns a result via either git or mtime."""
+    from jarvis.agents.conversation import ConversationAgent
+
+    agent = ConversationAgent(MagicMock())
+    result = await agent._execute_tool("recent_changes", {})
+
+    assert result["source"] in ("git", "mtime")
+
+
+async def test_current_mode_injected_into_reply(monkeypatch):
+    """The active operating mode is injected into the per-call user message."""
+    from jarvis.agents.conversation import ConversationAgent
+    from jarvis.ha_client import HAClient
+
+    agent = ConversationAgent(MagicMock(spec=HAClient))
+    monkeypatch.setattr("jarvis.scheduler.resolve_mode", AsyncMock(return_value="away"))
+
+    captured = {}
+
+    async def cap(**kwargs):
+        captured["messages"] = kwargs["messages"]
+        m = MagicMock()
+        m.choices[0].finish_reason = "stop"
+        m.choices[0].message.content = "ok"
+        m.choices[0].message.tool_calls = None
+        return m
+
+    with patch("litellm.acompletion", side_effect=cap):
+        await agent.reply(chat_id=5, user_text="hi")
+
+    user_msgs = [m for m in captured["messages"] if m["role"] == "user"]
+    assert any("away" in (m["content"] or "") for m in user_msgs)
+
+
+def test_operational_layer_describes_new_features():
+    """The static prompt advertises modes, anomaly detection, and recent_changes."""
+    from jarvis.agents import conversation
+    op = conversation._operational_layer()
+    assert "mode" in op.lower()
+    assert "check_anomalies" in op
+    assert "recent_changes" in op
+
+
 async def test_recent_alerts_not_populated_on_silent():
     """SILENT responses should not be added to _recent_alerts."""
     from jarvis.agents.conversation import ConversationAgent

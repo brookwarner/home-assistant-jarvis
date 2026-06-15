@@ -2,6 +2,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import subprocess
 from collections import defaultdict, deque
 from pathlib import Path
@@ -281,6 +282,42 @@ TOOLS = [
     {
         "type": "function",
         "function": {
+            "name": "check_anomalies",
+            "description": (
+                "Check today's home metrics (water, energy, power, spa, ...) against the learned "
+                "baseline and return any anomalies. This is the same engine the morning briefing "
+                "uses, but on demand. Use when the user asks if anything is unusual / off / out of "
+                "the ordinary, or 'any anomalies?'."
+            ),
+            "parameters": {"type": "object", "properties": {}},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "recent_changes",
+            "description": (
+                "See what was recently changed — in your own code (scope 'jarvis') or in the Home "
+                "Assistant configuration (scope 'config'). Uses git history when available, "
+                "otherwise the most recently modified files. Use when the user asks what's new, "
+                "what changed, or what you've been working on lately."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "scope": {
+                        "type": "string",
+                        "enum": ["jarvis", "config"],
+                        "description": "'jarvis' = your own codebase; 'config' = the HA config dir. Default 'jarvis'.",
+                    },
+                    "limit": {"type": "integer", "description": "Max entries to return (default 15)."},
+                },
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "delegate_to_opus",
             "description": (
                 "Hand a complex task to the Opus sub-agent (Claude Opus 4.6). "
@@ -415,6 +452,19 @@ def _now_str() -> str:
     return now.strftime("%A %d %B %Y, %H:%M %Z")
 
 
+async def _current_mode_line(ha_client: Any) -> str:
+    """Resolve the active operating mode and return a one-line posture banner for the
+    per-call user message (kept out of the cached system prompt because the mode is
+    volatile). Returns '' on any failure — mode awareness must never block a reply."""
+    try:
+        from jarvis.scheduler import resolve_mode, MODES
+        mode = await resolve_mode(ha_client)
+        posture = MODES.get(mode, {}).get("posture", "")
+        return f"(mode: {mode} — {posture})" if posture else f"(mode: {mode})"
+    except Exception:
+        return ""
+
+
 def _operational_layer() -> str:
     """Tools/timezone/formatting rules. Deliberately NO terseness mandate (it buried the
     voice) and NO current-time string (kept out of the static prefix so it can be cached;
@@ -432,6 +482,14 @@ def _operational_layer() -> str:
         "FORMATTING: Never use markdown. No bold, italics, tables, * bullets, # headers, backticks.\n\n"
         "Never say 'certainly', 'of course', 'happy to help', 'great question'. Don't pad — but do not flatten "
         "your voice into a terse status report either. Speak as yourself.\n\n"
+        "CAPABILITIES:\n"
+        "Operating modes — you run in one of: quiet, standard, away, storm. The active mode is shown as "
+        "'(mode: ...)' at the top of each message; honour its posture. Switch with set_mode when asked "
+        "('go quiet', 'away mode', 'back to standard').\n"
+        "Anomaly detection — check_anomalies compares today's metrics (water, energy, power, spa, ...) against "
+        "a learned baseline; use it when asked whether anything is unusual.\n"
+        "Recent changes — recent_changes shows what was recently changed in your own code (scope 'jarvis') or "
+        "the HA config (scope 'config'); use it when asked what's new or what you've been working on.\n\n"
         "TELEGRAM TOOLS:\n"
         "send_message — pushes a message to the user immediately, mid-turn. Use to acknowledge long tasks "
         "('On it, querying energy data...') or to deliver the actual answer for a complex request. "
@@ -504,7 +562,7 @@ def _format_tool_footer(tool_log: list[tuple[str, dict]]) -> str:
     actions: list[str] = []
 
     for name, inputs in tool_log:
-        if name in ("get_state", "get_states_by_domain", "get_history", "get_statistics", "search_statistics", "read_ha_config", "read_self", "search_entities"):
+        if name in ("get_state", "get_states_by_domain", "get_history", "get_statistics", "search_statistics", "read_ha_config", "read_self", "search_entities", "check_anomalies", "recent_changes"):
             reads += 1
         elif name == "call_service":
             svc = inputs.get("service", "?")
@@ -556,7 +614,11 @@ class ConversationAgent:
     async def reply(self, chat_id: int, user_text: str) -> str:
         self._agent_busy = True
         history = self._history[chat_id]
-        history.append({"role": "user", "content": f"(now: {_now_str()})\n{user_text}"})
+        prefix = f"(now: {_now_str()})"
+        mode_line = await _current_mode_line(self._ha)
+        if mode_line:
+            prefix += f"\n{mode_line}"
+        history.append({"role": "user", "content": f"{prefix}\n{user_text}"})
 
         if len(history) > MAX_HISTORY:
             history[:] = history[-MAX_HISTORY:]
@@ -805,6 +867,14 @@ class ConversationAgent:
                     "input_select", "select_option", {"entity_id": entity, "option": mode}
                 )
                 return {"status": "ok", "mode": mode}
+            elif name == "check_anomalies":
+                from jarvis.anomaly import detect_and_surface
+                anomalies = await detect_and_surface(self._ha)
+                if anomalies:
+                    return {"anomalies": anomalies}
+                return {"anomalies": [], "note": "Nothing unusual vs the learned baseline."}
+            elif name == "recent_changes":
+                return _recent_changes(inputs.get("scope", "jarvis"), inputs.get("limit", 15))
             elif name == "search_entities":
                 return _search_entities(inputs.get("query", ""))
             elif name == "add_custom_alert":
@@ -856,6 +926,65 @@ def _search_entities(query: str) -> dict:
     if not matches:
         return {"results": [], "note": f"No entities matching '{query}'"}
     return {"results": matches[:20]}  # cap at 20 to limit tokens
+
+
+def _change_root(scope: str) -> Path:
+    """Map a recent_changes scope to a directory. 'jarvis' = the deployed code dir
+    (/config/jarvis in the add-on); 'config' = the HA config dir one level up (/config)."""
+    root = Path(__file__).parent.parent
+    return root.parent if scope == "config" else root
+
+
+def _collect_changes(root: Path, limit: int) -> dict:
+    """Recent changes under `root`: git log if it's a repo and git is installed, else the
+    most recently modified files by mtime. The mtime fallback means this works even when
+    the dir was deployed via scp (no .git) or git is absent from the container."""
+    if not root.exists():
+        return {"error": f"Path not found: {root}"}
+    try:
+        # `-- .` scopes the log to `root` itself, so when jarvis lives inside the HA
+        # config git repo (the Git add-on tracks /config), scope='jarvis' shows only
+        # commits touching /config/jarvis rather than the whole config history.
+        result = subprocess.run(
+            ["git", "-C", str(root), "log", "--pretty=format:%h %ad %s", "--date=short", "-n", str(limit), "--", "."],
+            capture_output=True, text=True, timeout=15,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            return {"source": "git", "root": str(root), "commits": result.stdout.strip().splitlines()}
+    except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+        pass  # git not installed or not a repo — fall through to mtime
+
+    import datetime
+    skip_dirs = {".git", "__pycache__", ".pytest_cache", "node_modules"}
+    entries: list[tuple[float, str]] = []
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = [d for d in dirnames if d not in skip_dirs]
+        for fn in filenames:
+            if fn.endswith(".pyc"):
+                continue
+            fp = Path(dirpath) / fn
+            try:
+                entries.append((fp.stat().st_mtime, str(fp.relative_to(root))))
+            except OSError:
+                continue
+    entries.sort(reverse=True)
+    recent = [
+        {"file": rel, "modified": datetime.datetime.fromtimestamp(mt).strftime("%Y-%m-%d %H:%M")}
+        for mt, rel in entries[:limit]
+    ]
+    return {"source": "mtime", "root": str(root), "recent_files": recent}
+
+
+def _recent_changes(scope: str, limit: int) -> dict:
+    scope = (scope or "jarvis").strip().lower()
+    if scope not in ("jarvis", "config"):
+        scope = "jarvis"
+    try:
+        limit = int(limit)
+    except (TypeError, ValueError):
+        limit = 15
+    limit = max(1, min(limit, 50))
+    return _collect_changes(_change_root(scope), limit)
 
 
 def _remember(inputs: dict) -> dict:

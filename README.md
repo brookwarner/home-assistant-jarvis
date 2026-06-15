@@ -49,6 +49,9 @@ Every model string is overridable via `.env` (`TRIAGE_MODEL`, `CONVERSATION_MODE
 - `read_self` / `write_self` — edit soul.md, briefing_prompt.md, ha_entities.md
 - `read_ha_config` / `write_ha_config` / `reload_ha_config` — edit HA YAML
 - `add_custom_alert` — set up threshold monitors
+- `set_mode` — switch operating mode (quiet/standard/away/storm)
+- `check_anomalies` — on-demand anomaly check vs the learned baseline (same engine as the briefing)
+- `recent_changes` — git log / recently-modified files for Jarvis's own code or the HA config
 - `delegate_to_opus` — hand complex tasks to Opus sub-agent
 
 ---
