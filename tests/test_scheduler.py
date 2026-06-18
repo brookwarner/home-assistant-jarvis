@@ -380,6 +380,98 @@ async def test_morning_briefing_skips_caravan_when_disabled():
         config.CARAVAN_PROMPT_ENABLED = True
 
 
+async def test_morning_briefing_arms_safety_net():
+    """When the caravan question is asked, a decision is marked pending for today."""
+    from jarvis import scheduler as s
+    from jarvis import caravan
+    from jarvis.config import config
+
+    config.CARAVAN_PROMPT_ENABLED = True
+    mock_ha = MagicMock()
+    mock_ha.get_states = AsyncMock(return_value=[])
+    mock_ha.get_state_summary = MagicMock(return_value="")
+
+    with patch("jarvis.agents.briefing.generate", new_callable=AsyncMock, return_value="Morning."), \
+         patch("jarvis.anomaly.detect_and_surface", new_callable=AsyncMock, return_value=[]):
+        scheduler = s.build_scheduler(mock_ha, AsyncMock(), None, AsyncMock())
+        jobs = {job.id: job for job in scheduler.get_jobs()}
+        await jobs["morning_briefing"].func()
+
+    assert caravan.decision_pending() is True
+
+
+async def test_caravan_safety_net_forces_off_when_unanswered():
+    """No decision by safety hour -> caravan entities forced off; notify only if it was on."""
+    from jarvis import scheduler as s
+    from jarvis import caravan
+    from jarvis.config import config
+
+    config.CARAVAN_PROMPT_ENABLED = True
+    config.CARAVAN_ENTITIES = ["input_boolean.caravan_heater_enabled"]
+    caravan.mark_prompt_sent()  # question asked, no decision made
+
+    mock_ha = MagicMock()
+    mock_ha.get_state = AsyncMock(return_value={"state": "on"})
+    mock_ha.call_service = AsyncMock(return_value=[])
+    send_fn = AsyncMock()
+
+    scheduler = s.build_scheduler(mock_ha, AsyncMock(), None, send_fn)
+    jobs = {job.id: job for job in scheduler.get_jobs()}
+    await jobs["caravan_safety_net"].func()
+
+    mock_ha.call_service.assert_awaited_once_with(
+        "input_boolean", "turn_off", {"entity_id": "input_boolean.caravan_heater_enabled"}
+    )
+    send_fn.assert_awaited_once()  # it was on, so we tell the user
+    assert caravan.decision_pending() is False  # enforcement marks it decided
+
+
+async def test_caravan_safety_net_silent_when_already_off():
+    from jarvis import scheduler as s
+    from jarvis import caravan
+    from jarvis.config import config
+
+    config.CARAVAN_PROMPT_ENABLED = True
+    config.CARAVAN_ENTITIES = ["input_boolean.caravan_heater_enabled"]
+    caravan.mark_prompt_sent()
+
+    mock_ha = MagicMock()
+    mock_ha.get_state = AsyncMock(return_value={"state": "off"})
+    mock_ha.call_service = AsyncMock(return_value=[])
+    send_fn = AsyncMock()
+
+    scheduler = s.build_scheduler(mock_ha, AsyncMock(), None, send_fn)
+    jobs = {job.id: job for job in scheduler.get_jobs()}
+    await jobs["caravan_safety_net"].func()
+
+    mock_ha.call_service.assert_awaited_once()  # still forces off (idempotent)
+    send_fn.assert_not_awaited()  # but stays silent
+
+
+async def test_caravan_safety_net_skips_when_decided():
+    """If the user already answered, the safety net does nothing."""
+    from jarvis import scheduler as s
+    from jarvis import caravan
+    from jarvis.config import config
+
+    config.CARAVAN_PROMPT_ENABLED = True
+    config.CARAVAN_ENTITIES = ["input_boolean.caravan_heater_enabled"]
+    caravan.mark_prompt_sent()
+    caravan.mark_decided()  # user replied
+
+    mock_ha = MagicMock()
+    mock_ha.get_state = AsyncMock(return_value={"state": "on"})
+    mock_ha.call_service = AsyncMock(return_value=[])
+    send_fn = AsyncMock()
+
+    scheduler = s.build_scheduler(mock_ha, AsyncMock(), None, send_fn)
+    jobs = {job.id: job for job in scheduler.get_jobs()}
+    await jobs["caravan_safety_net"].func()
+
+    mock_ha.call_service.assert_not_awaited()
+    send_fn.assert_not_awaited()
+
+
 async def test_resolve_mode_reads_input_select(monkeypatch):
     from jarvis import scheduler as s
     mock_ha = MagicMock()

@@ -297,7 +297,9 @@ def build_scheduler(
             anomalies = await detect_and_surface(ha_client)  # [] on any failure
             text = await generate(summary, anomalies=anomalies)
             if config.CARAVAN_PROMPT_ENABLED:
+                from jarvis import caravan
                 text = text.rstrip() + "\n\n" + CARAVAN_QUESTION
+                caravan.mark_prompt_sent()  # arms the safety net for today
             await send_fn(text)
             # Record into conversation history so a later reply ("yep, using it") has
             # context and the agent can act on it. Best-effort — never fail the briefing.
@@ -312,6 +314,28 @@ def build_scheduler(
                 await send_fn(f"Morning briefing failed: {e}")
             except Exception:
                 pass
+
+    async def caravan_safety_net():
+        """If the morning briefing asked about the caravan but the user never gave an
+        explicit answer, force the auto-heat off so an unused caravan never heats. No-op
+        (and silent) when the user already decided, or when heating is already off."""
+        try:
+            from jarvis.config import config
+            from jarvis import caravan
+            if not config.CARAVAN_PROMPT_ENABLED or not caravan.decision_pending():
+                return
+            # Only notify if heating is actually on; a force-off when already off is silent.
+            was_on = False
+            primary = config.CARAVAN_ENTITIES[0] if config.CARAVAN_ENTITIES else None
+            if primary:
+                state = await ha_client.get_state(primary)
+                was_on = ((state or {}).get("state") or "").strip().lower() == "on"
+            await caravan.set_caravan(ha_client, enabled=False)
+            caravan.mark_decided()  # don't re-enforce later the same day
+            if was_on:
+                await send_fn("No word on the caravan, so I've switched the auto-heat back off.")
+        except Exception as e:
+            logger.debug(f"caravan_safety_net failed: {e}")
 
     async def insight_poll():
         global _last_snapshot, _last_proactive_run
@@ -354,6 +378,12 @@ def build_scheduler(
 
     # Daily briefing at 07:30 local time (scheduler uses system time — set TZ env var)
     scheduler.add_job(morning_briefing, "cron", hour=7, minute=30, id="morning_briefing")
+
+    # Caravan safety net: force auto-heat off if unanswered by CARAVAN_SAFETY_HOUR (default
+    # 09:00). The job self-gates on config + whether a decision is still pending today.
+    from jarvis.config import config as _cfg
+    safety_hour = max(0, min(23, _cfg.CARAVAN_SAFETY_HOUR))
+    scheduler.add_job(caravan_safety_net, "cron", hour=safety_hour, minute=0, id="caravan_safety_net")
 
     # Insight poll fires at a fast base cadence; per-mode cadence is enforced inside via
     # _last_proactive_run gating (away/storm 5 min, standard = poll_interval, quiet 30).

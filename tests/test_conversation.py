@@ -138,14 +138,15 @@ async def test_ask_user_timeout():
     assert "timed out" in result["reply"]
     assert agent._pending_reply is None
 
-async def test_set_caravan_heating_enables_configured_automations(monkeypatch):
-    """enabled=true turns on every configured caravan automation entity."""
-    monkeypatch.setenv("CARAVAN_AUTOMATIONS", "automation.auto_heat_caravan,automation.caravan_heartbeat")
+async def test_set_caravan_heating_enables_each_entity_by_domain():
+    """enabled=true turns on every configured entity using its own domain."""
     from jarvis.agents.conversation import ConversationAgent
     from jarvis.ha_client import HAClient
     from jarvis.config import config
 
-    config.CARAVAN_AUTOMATIONS = ["automation.auto_heat_caravan", "automation.caravan_heartbeat"]
+    config.CARAVAN_ENTITIES = [
+        "input_boolean.caravan_heater_enabled", "automation.warm_caravan_on_cold_workdays",
+    ]
     mock_ha = MagicMock(spec=HAClient)
     mock_ha.call_service = AsyncMock(return_value=[])
     agent = ConversationAgent(mock_ha)
@@ -154,35 +155,55 @@ async def test_set_caravan_heating_enables_configured_automations(monkeypatch):
 
     assert result["enabled"] is True
     calls = mock_ha.call_service.await_args_list
-    assert len(calls) == 2
-    for c in calls:
-        assert c.args[0] == "automation"
-        assert c.args[1] == "turn_on"
-    assert {c.args[2]["entity_id"] for c in calls} == {
-        "automation.auto_heat_caravan", "automation.caravan_heartbeat",
+    # Each entity switched via its own domain, all turn_on.
+    assert {(c.args[0], c.args[1], c.args[2]["entity_id"]) for c in calls} == {
+        ("input_boolean", "turn_on", "input_boolean.caravan_heater_enabled"),
+        ("automation", "turn_on", "automation.warm_caravan_on_cold_workdays"),
     }
 
 
-async def test_set_caravan_heating_disables_and_can_trigger(monkeypatch):
-    """enabled=false turns off; trigger_now also fires the primary automation."""
+async def test_set_caravan_heating_disables_and_can_trigger():
+    """enabled=false turns off; trigger_now also fires only the automation entities."""
     from jarvis.agents.conversation import ConversationAgent
     from jarvis.ha_client import HAClient
     from jarvis.config import config
 
-    config.CARAVAN_AUTOMATIONS = ["automation.auto_heat_caravan"]
+    config.CARAVAN_ENTITIES = [
+        "input_boolean.caravan_heater_enabled", "automation.warm_caravan_on_cold_workdays",
+    ]
     mock_ha = MagicMock(spec=HAClient)
     mock_ha.call_service = AsyncMock(return_value=[])
     agent = ConversationAgent(mock_ha)
 
     off = await agent._execute_tool("set_caravan_heating", {"enabled": False})
     assert off["enabled"] is False
-    assert mock_ha.call_service.await_args_list[0].args[1] == "turn_off"
+    assert {c.args[1] for c in mock_ha.call_service.await_args_list} == {"turn_off"}
 
     mock_ha.call_service.reset_mock()
     on = await agent._execute_tool("set_caravan_heating", {"enabled": True, "trigger_now": True})
-    services = [c.args[1] for c in mock_ha.call_service.await_args_list]
-    assert services == ["turn_on", "trigger"]
+    triggers = [c for c in mock_ha.call_service.await_args_list if c.args[1] == "trigger"]
+    assert len(triggers) == 1  # only the automation is triggered, not the input_boolean
+    assert triggers[0].args[2]["entity_id"] == "automation.warm_caravan_on_cold_workdays"
     assert on["enabled"] is True
+
+
+async def test_set_caravan_heating_records_decision():
+    """Calling the tool marks today's caravan decision so the safety net stands down."""
+    from jarvis.agents.conversation import ConversationAgent
+    from jarvis.ha_client import HAClient
+    from jarvis.config import config
+    from jarvis import caravan
+
+    config.CARAVAN_ENTITIES = ["input_boolean.caravan_heater_enabled"]
+    caravan.mark_prompt_sent()
+    assert caravan.decision_pending() is True
+
+    mock_ha = MagicMock(spec=HAClient)
+    mock_ha.call_service = AsyncMock(return_value=[])
+    agent = ConversationAgent(mock_ha)
+    await agent._execute_tool("set_caravan_heating", {"enabled": True})
+
+    assert caravan.decision_pending() is False
 
 
 def test_note_briefing_records_user_then_assistant_turn():

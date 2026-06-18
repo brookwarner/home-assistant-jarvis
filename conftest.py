@@ -8,9 +8,21 @@ import sys
 import types
 from pathlib import Path
 
+import pytest
+
 _here = Path(__file__).resolve().parent
 
 if "jarvis" not in sys.modules:
     pkg = types.ModuleType("jarvis")
     pkg.__path__ = [str(_here)]
     sys.modules["jarvis"] = pkg
+
+
+@pytest.fixture(autouse=True)
+def _reset_caravan_state():
+    """The caravan daily-decision flags are module globals; reset them between tests so
+    one test's prompt/decision can't leak into another."""
+    from jarvis import caravan
+    caravan._prompt_sent_day = None
+    caravan._decided_day = None
+    yield
