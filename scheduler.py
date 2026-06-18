@@ -276,6 +276,37 @@ async def check_user_alerts(
             logger.debug(f"Alert check failed for {alert.get('entity_id')}: {e}")
 
 
+async def run_morning_briefing(
+    ha_client: Any,
+    send_fn: Callable[[str], Awaitable[None]],
+    briefing_recorder: Callable[[str], Awaitable[None]] | None = None,
+) -> str:
+    """Generate and deliver the morning briefing. Shared by the scheduled 07:30 job and the
+    manual /briefing command so both exercise the same flow: append the caravan question
+    (arming the safety net), send, and record into history. Returns the sent text."""
+    from jarvis.agents.briefing import generate
+    from jarvis.anomaly import detect_and_surface
+    from jarvis.config import config
+
+    states = await ha_client.get_states()
+    summary = ha_client.get_state_summary(states, domains=WATCHED_DOMAINS)
+    anomalies = await detect_and_surface(ha_client)  # [] on any failure
+    text = await generate(summary, anomalies=anomalies)
+    if config.CARAVAN_PROMPT_ENABLED:
+        from jarvis import caravan
+        text = text.rstrip() + "\n\n" + CARAVAN_QUESTION
+        caravan.mark_prompt_sent()  # arms the safety net for today
+    await send_fn(text)
+    # Record into conversation history so a later reply ("yep, using it") has context
+    # and the agent can act on it. Best-effort — never fail the briefing.
+    if briefing_recorder is not None:
+        try:
+            await briefing_recorder(text)
+        except Exception as e:
+            logger.debug(f"briefing_recorder failed: {e}")
+    return text
+
+
 def build_scheduler(
     ha_client: Any,
     triage_agent_fn: Callable,
@@ -289,25 +320,7 @@ def build_scheduler(
     async def morning_briefing():
         logger.info("Running morning briefing")
         try:
-            states = await ha_client.get_states()
-            summary = ha_client.get_state_summary(states, domains=WATCHED_DOMAINS)
-            from jarvis.agents.briefing import generate
-            from jarvis.anomaly import detect_and_surface
-            from jarvis.config import config
-            anomalies = await detect_and_surface(ha_client)  # [] on any failure
-            text = await generate(summary, anomalies=anomalies)
-            if config.CARAVAN_PROMPT_ENABLED:
-                from jarvis import caravan
-                text = text.rstrip() + "\n\n" + CARAVAN_QUESTION
-                caravan.mark_prompt_sent()  # arms the safety net for today
-            await send_fn(text)
-            # Record into conversation history so a later reply ("yep, using it") has
-            # context and the agent can act on it. Best-effort — never fail the briefing.
-            if briefing_recorder is not None:
-                try:
-                    await briefing_recorder(text)
-                except Exception as e:
-                    logger.debug(f"briefing_recorder failed: {e}")
+            await run_morning_briefing(ha_client, send_fn, briefing_recorder=briefing_recorder)
         except Exception as e:
             logger.error(f"Morning briefing failed: {e}")
             try:

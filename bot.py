@@ -138,18 +138,25 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         Path(tmp_path).unlink(missing_ok=True)
 
 
+async def _record_briefing(text: str) -> None:
+    # Land the morning briefing (incl. the caravan question) in conversation history so the
+    # user's reply has context and the agent can enable caravan heating on request.
+    agent.note_briefing(config.TELEGRAM_CHAT_ID, text)
+
+
 async def cmd_briefing(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Trigger an immediate morning briefing — useful for testing proactive messages."""
+    """Trigger an immediate morning briefing — useful for testing. Runs the same path as
+    the scheduled 07:30 job (caravan question, history recording, safety-net arming)."""
     if update.effective_chat.id != config.TELEGRAM_CHAT_ID:
         return
     await context.bot.send_chat_action(chat_id=update.effective_chat.id, action="typing")
     try:
-        states = await ha.get_states()
-        from jarvis.scheduler import WATCHED_DOMAINS
-        summary = ha.get_state_summary(states, domains=WATCHED_DOMAINS)
-        from jarvis.agents.briefing import generate
-        text = await generate(summary)
-        await update.message.reply_text(_strip_markdown(text))
+        from jarvis.scheduler import run_morning_briefing
+
+        async def _send(t: str) -> None:
+            await update.message.reply_text(_strip_markdown(t))
+
+        await run_morning_briefing(ha, _send, briefing_recorder=_record_briefing)
     except Exception as e:
         await update.message.reply_text(f"Briefing failed: {e}")
 
@@ -203,15 +210,10 @@ async def main() -> None:
             model=config.PROACTIVE_MODEL,
         )
 
-    async def record_briefing(text: str) -> None:
-        # Land the morning briefing (incl. the caravan question) in conversation history so
-        # the user's reply has context and the agent can enable caravan heating on request.
-        agent.note_briefing(config.TELEGRAM_CHAT_ID, text)
-
     scheduler = build_scheduler(
         ha, proactive_poll, None, send_to_user,
         poll_interval=config.POLL_INTERVAL_MIN,
-        briefing_recorder=record_briefing,
+        briefing_recorder=_record_briefing,
     )
     scheduler.start()
 
