@@ -203,8 +203,15 @@ async def main() -> None:
             model=config.PROACTIVE_MODEL,
         )
 
+    async def record_briefing(text: str) -> None:
+        # Land the morning briefing (incl. the caravan question) in conversation history so
+        # the user's reply has context and the agent can enable caravan heating on request.
+        agent.note_briefing(config.TELEGRAM_CHAT_ID, text)
+
     scheduler = build_scheduler(
-        ha, proactive_poll, None, send_to_user, poll_interval=config.POLL_INTERVAL_MIN
+        ha, proactive_poll, None, send_to_user,
+        poll_interval=config.POLL_INTERVAL_MIN,
+        briefing_recorder=record_briefing,
     )
     scheduler.start()
 

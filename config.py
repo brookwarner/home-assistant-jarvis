@@ -42,5 +42,16 @@ class Config:
         "true", "1", "yes", "on",
     )
     POLL_INTERVAL_MIN: int = int(os.environ.get("POLL_INTERVAL_MIN", "15"))
+    # Caravan: the morning briefing can ask whether you'll use the caravan that day.
+    # When you confirm, Jarvis enables these automation entities — the auto-heat plus
+    # any keep-alive heartbeats. Comma-separated; falls back to the auto-heat automation.
+    CARAVAN_PROMPT_ENABLED: bool = os.environ.get("CARAVAN_PROMPT_ENABLED", "true").strip().lower() in (
+        "true", "1", "yes", "on",
+    )
+    CARAVAN_AUTOMATIONS: list[str] = [
+        s.strip()
+        for s in os.environ.get("CARAVAN_AUTOMATIONS", "automation.auto_heat_caravan").split(",")
+        if s.strip()
+    ]
 
 config = Config()

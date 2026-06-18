@@ -330,6 +330,56 @@ async def test_insight_poll_group_missing_is_graceful():
     assert "garage_door" in triage_fn.call_args[0][0]
 
 
+async def test_morning_briefing_appends_caravan_question_and_records():
+    from jarvis import scheduler as s
+    from jarvis.config import config
+
+    config.CARAVAN_PROMPT_ENABLED = True
+    mock_ha = MagicMock()
+    mock_ha.get_states = AsyncMock(return_value=[])
+    mock_ha.get_state_summary = MagicMock(return_value="")
+    sent = []
+    recorded = []
+    send_fn = AsyncMock(side_effect=lambda t: sent.append(t))
+    recorder = AsyncMock(side_effect=lambda t: recorded.append(t))
+
+    with patch("jarvis.agents.briefing.generate", new_callable=AsyncMock, return_value="Good morning."), \
+         patch("jarvis.anomaly.detect_and_surface", new_callable=AsyncMock, return_value=[]):
+        scheduler = s.build_scheduler(
+            mock_ha, AsyncMock(), None, send_fn, briefing_recorder=recorder
+        )
+        jobs = {job.id: job for job in scheduler.get_jobs()}
+        await jobs["morning_briefing"].func()
+
+    assert len(sent) == 1
+    assert "caravan" in sent[0].lower()
+    # The exact same text is recorded into history for reply context.
+    assert recorded == sent
+
+
+async def test_morning_briefing_skips_caravan_when_disabled():
+    from jarvis import scheduler as s
+    from jarvis.config import config
+
+    config.CARAVAN_PROMPT_ENABLED = False
+    try:
+        mock_ha = MagicMock()
+        mock_ha.get_states = AsyncMock(return_value=[])
+        mock_ha.get_state_summary = MagicMock(return_value="")
+        sent = []
+        send_fn = AsyncMock(side_effect=lambda t: sent.append(t))
+
+        with patch("jarvis.agents.briefing.generate", new_callable=AsyncMock, return_value="Good morning."), \
+             patch("jarvis.anomaly.detect_and_surface", new_callable=AsyncMock, return_value=[]):
+            scheduler = s.build_scheduler(mock_ha, AsyncMock(), None, send_fn)
+            jobs = {job.id: job for job in scheduler.get_jobs()}
+            await jobs["morning_briefing"].func()
+
+        assert sent == ["Good morning."]
+    finally:
+        config.CARAVAN_PROMPT_ENABLED = True
+
+
 async def test_resolve_mode_reads_input_select(monkeypatch):
     from jarvis import scheduler as s
     mock_ha = MagicMock()

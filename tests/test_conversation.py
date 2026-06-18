@@ -138,6 +138,68 @@ async def test_ask_user_timeout():
     assert "timed out" in result["reply"]
     assert agent._pending_reply is None
 
+async def test_set_caravan_heating_enables_configured_automations(monkeypatch):
+    """enabled=true turns on every configured caravan automation entity."""
+    monkeypatch.setenv("CARAVAN_AUTOMATIONS", "automation.auto_heat_caravan,automation.caravan_heartbeat")
+    from jarvis.agents.conversation import ConversationAgent
+    from jarvis.ha_client import HAClient
+    from jarvis.config import config
+
+    config.CARAVAN_AUTOMATIONS = ["automation.auto_heat_caravan", "automation.caravan_heartbeat"]
+    mock_ha = MagicMock(spec=HAClient)
+    mock_ha.call_service = AsyncMock(return_value=[])
+    agent = ConversationAgent(mock_ha)
+
+    result = await agent._execute_tool("set_caravan_heating", {"enabled": True})
+
+    assert result["enabled"] is True
+    calls = mock_ha.call_service.await_args_list
+    assert len(calls) == 2
+    for c in calls:
+        assert c.args[0] == "automation"
+        assert c.args[1] == "turn_on"
+    assert {c.args[2]["entity_id"] for c in calls} == {
+        "automation.auto_heat_caravan", "automation.caravan_heartbeat",
+    }
+
+
+async def test_set_caravan_heating_disables_and_can_trigger(monkeypatch):
+    """enabled=false turns off; trigger_now also fires the primary automation."""
+    from jarvis.agents.conversation import ConversationAgent
+    from jarvis.ha_client import HAClient
+    from jarvis.config import config
+
+    config.CARAVAN_AUTOMATIONS = ["automation.auto_heat_caravan"]
+    mock_ha = MagicMock(spec=HAClient)
+    mock_ha.call_service = AsyncMock(return_value=[])
+    agent = ConversationAgent(mock_ha)
+
+    off = await agent._execute_tool("set_caravan_heating", {"enabled": False})
+    assert off["enabled"] is False
+    assert mock_ha.call_service.await_args_list[0].args[1] == "turn_off"
+
+    mock_ha.call_service.reset_mock()
+    on = await agent._execute_tool("set_caravan_heating", {"enabled": True, "trigger_now": True})
+    services = [c.args[1] for c in mock_ha.call_service.await_args_list]
+    assert services == ["turn_on", "trigger"]
+    assert on["enabled"] is True
+
+
+def test_note_briefing_records_user_then_assistant_turn():
+    """note_briefing appends a user trigger turn + assistant text so history stays valid."""
+    from jarvis.agents.conversation import ConversationAgent
+    from jarvis.ha_client import HAClient
+
+    agent = ConversationAgent(MagicMock(spec=HAClient))
+    agent.note_briefing(123, "Good morning. Will you use the caravan today?")
+
+    history = agent._history[123]
+    assert len(history) == 2
+    assert history[0]["role"] == "user"
+    assert history[1]["role"] == "assistant"
+    assert "caravan" in history[1]["content"].lower()
+
+
 async def test_run_proactive_sends_response():
     """run_proactive runs the tool loop and sends the final text via send_fn."""
     from jarvis.agents.conversation import ConversationAgent

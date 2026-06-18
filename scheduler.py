@@ -151,6 +151,15 @@ def _is_watched_in_mode(eid: str, mode: str) -> bool:
     return any(s in eid for s in m["extra_substrings"])
 
 
+# Appended to the morning briefing (when CARAVAN_PROMPT_ENABLED) so the user can opt the
+# caravan auto-heat on for the day with a plain reply. The conversation agent has context
+# (the briefing is recorded into history) and a set_caravan_heating tool to act on it.
+CARAVAN_QUESTION = (
+    "One more thing — are you planning to use the caravan today? "
+    "If so, say the word and I'll switch on the auto-heat and its heartbeats."
+)
+
+
 # Numeric noise thresholds — change must exceed EITHER to be reported
 NUMERIC_ABS_THRESHOLD = 2.0   # absolute units
 NUMERIC_PCT_THRESHOLD = 0.05  # 5% relative change
@@ -273,6 +282,7 @@ def build_scheduler(
     briefing_agent_fn: Callable,
     send_fn: Callable[[str], Awaitable[None]],
     poll_interval: int = 15,
+    briefing_recorder: Callable[[str], Awaitable[None]] | None = None,
 ) -> AsyncIOScheduler:
     scheduler = AsyncIOScheduler()
 
@@ -283,9 +293,19 @@ def build_scheduler(
             summary = ha_client.get_state_summary(states, domains=WATCHED_DOMAINS)
             from jarvis.agents.briefing import generate
             from jarvis.anomaly import detect_and_surface
+            from jarvis.config import config
             anomalies = await detect_and_surface(ha_client)  # [] on any failure
             text = await generate(summary, anomalies=anomalies)
+            if config.CARAVAN_PROMPT_ENABLED:
+                text = text.rstrip() + "\n\n" + CARAVAN_QUESTION
             await send_fn(text)
+            # Record into conversation history so a later reply ("yep, using it") has
+            # context and the agent can act on it. Best-effort — never fail the briefing.
+            if briefing_recorder is not None:
+                try:
+                    await briefing_recorder(text)
+                except Exception as e:
+                    logger.debug(f"briefing_recorder failed: {e}")
         except Exception as e:
             logger.error(f"Morning briefing failed: {e}")
             try:

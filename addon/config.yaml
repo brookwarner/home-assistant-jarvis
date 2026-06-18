@@ -37,6 +37,9 @@ options:
     - caravan_temperature
   proactive_watch_domains:
     - lock
+  caravan_prompt_enabled: true
+  caravan_automations:
+    - automation.auto_heat_caravan
   # Nested groups must be present even when all their fields are optional, or the
   # add-on fails validation ("Missing option 'models'"). Empty-dict defaults satisfy
   # that while keeping every field optional (blank -> falls back to .env).
@@ -57,6 +60,11 @@ schema:
   proactive_watch_substrings:
     - str
   proactive_watch_domains:
+    - str
+  # Morning briefing asks whether you'll use the caravan that day; on a yes, Jarvis
+  # enables these automation entities (auto-heat + any keep-alive heartbeats).
+  caravan_prompt_enabled: bool?
+  caravan_automations:
     - str
   bot_name: str?
   owner_name: str?

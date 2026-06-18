@@ -21,10 +21,12 @@ scalars = {
     'default_mode': 'DEFAULT_MODE', 'mode_entity': 'MODE_ENTITY',
     'bot_name': 'BOT_NAME', 'owner_name': 'OWNER_NAME',
     'whisper_model': 'WHISPER_MODEL',
+    'caravan_prompt_enabled': 'CARAVAN_PROMPT_ENABLED',
 }
 lists = {
     'proactive_watch_substrings': 'PROACTIVE_WATCH',
     'proactive_watch_domains': 'PROACTIVE_WATCH_DOMAINS',
+    'caravan_automations': 'CARAVAN_AUTOMATIONS',
 }
 # Grouped (nested) options.
 models = o.get('models') or {}

@@ -282,6 +282,33 @@ TOOLS = [
     {
         "type": "function",
         "function": {
+            "name": "set_caravan_heating",
+            "description": (
+                "Enable or disable the caravan auto-heat automation(s) and related heartbeats. "
+                "Call with enabled=true when the user says they plan to use the caravan that day "
+                "(typically in reply to the morning briefing's caravan question), and enabled=false "
+                "when they won't be. Targets the automations configured in CARAVAN_AUTOMATIONS "
+                "(default automation.auto_heat_caravan). Optionally trigger the auto-heat right away."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "enabled": {
+                        "type": "boolean",
+                        "description": "true to turn the caravan heating automations on, false to turn them off",
+                    },
+                    "trigger_now": {
+                        "type": "boolean",
+                        "description": "Also run the auto-heat automation immediately after enabling (default false)",
+                    },
+                },
+                "required": ["enabled"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "check_anomalies",
             "description": (
                 "Check today's home metrics (water, energy, power, spa, ...) against the learned "
@@ -489,7 +516,11 @@ def _operational_layer() -> str:
         "Anomaly detection — check_anomalies compares today's metrics (water, energy, power, spa, ...) against "
         "a learned baseline; use it when asked whether anything is unusual.\n"
         "Recent changes — recent_changes shows what was recently changed in your own code (scope 'jarvis') or "
-        "the HA config (scope 'config'); use it when asked what's new or what you've been working on.\n\n"
+        "the HA config (scope 'config'); use it when asked what's new or what you've been working on.\n"
+        "Caravan auto-heat — the morning briefing asks whether the user will use the caravan that day. "
+        "When they confirm they will, call set_caravan_heating(enabled=true) to switch on the auto-heat "
+        "automation and its heartbeats; if they say they won't, call set_caravan_heating(enabled=false). "
+        "Use trigger_now=true only if they want heating to start immediately.\n\n"
         "TELEGRAM TOOLS:\n"
         "send_message — pushes a message to the user immediately, mid-turn. Use to acknowledge long tasks "
         "('On it, querying energy data...') or to deliver the actual answer for a complex request. "
@@ -585,6 +616,8 @@ def _format_tool_footer(tool_log: list[tuple[str, dict]]) -> str:
             actions.append("delegated to Opus")
         elif name == "set_mode":
             actions.append(f"set mode {inputs.get('mode', '?')}")
+        elif name == "set_caravan_heating":
+            actions.append("caravan heating " + ("on" if inputs.get("enabled") else "off"))
         elif name == "add_custom_alert":
             actions.append("added alert")
         elif name == "send_message":
@@ -614,6 +647,16 @@ class ConversationAgent:
     def _record_sent(self, text: str) -> None:
         """Remember a full (untruncated) message we just sent, for dedup on later polls."""
         self._recent_alerts.append(text.strip())
+
+    def note_briefing(self, chat_id: int, text: str) -> None:
+        """Record a proactively-sent briefing into conversation history so the user's later
+        reply (e.g. answering the caravan question) has context. Mirrors the user/assistant
+        turn shape used elsewhere so the message list stays valid (no assistant-first turn)."""
+        history = self._history[chat_id]
+        history.append({"role": "user", "content": f"(now: {_now_str()}) [SCHEDULED BRIEFING]"})
+        history.append({"role": "assistant", "content": text})
+        if len(history) > MAX_HISTORY:
+            history[:] = history[-MAX_HISTORY:]
 
     async def reply(self, chat_id: int, user_text: str) -> str:
         self._agent_busy = True
@@ -824,6 +867,31 @@ class ConversationAgent:
         log_completion(response, "opus")
         return {"opus_result": response.choices[0].message.content or "Done."}
 
+    async def _set_caravan_heating(self, enabled: bool, trigger_now: bool = False) -> dict:
+        """Turn the configured caravan automation entities (auto-heat + heartbeats) on or off.
+        Optionally fire the primary auto-heat automation immediately so heating starts now
+        rather than waiting for the automation's own trigger."""
+        from jarvis.config import config
+        entities = config.CARAVAN_AUTOMATIONS
+        if not entities:
+            return {"error": "No caravan automations configured. Set CARAVAN_AUTOMATIONS."}
+        service = "turn_on" if enabled else "turn_off"
+        results: list[dict] = []
+        for eid in entities:
+            try:
+                await self._ha.call_service("automation", service, {"entity_id": eid})
+                results.append({"entity_id": eid, "status": service})
+            except Exception as e:
+                results.append({"entity_id": eid, "error": str(e)})
+        if enabled and trigger_now:
+            primary = entities[0]
+            try:
+                await self._ha.call_service("automation", "trigger", {"entity_id": primary})
+                results.append({"entity_id": primary, "status": "triggered"})
+            except Exception as e:
+                results.append({"entity_id": primary, "error": f"trigger failed: {e}"})
+        return {"enabled": enabled, "results": results}
+
     async def _ask_user_impl(self, prompt: str, timeout: int) -> dict:
         """Send prompt to user and block until they reply or timeout."""
         if not self._send_fn:
@@ -871,6 +939,10 @@ class ConversationAgent:
                     "input_select", "select_option", {"entity_id": entity, "option": mode}
                 )
                 return {"status": "ok", "mode": mode}
+            elif name == "set_caravan_heating":
+                return await self._set_caravan_heating(
+                    bool(inputs.get("enabled")), bool(inputs.get("trigger_now", False))
+                )
             elif name == "check_anomalies":
                 from jarvis.anomaly import detect_and_surface
                 anomalies = await detect_and_surface(self._ha)
