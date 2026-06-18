@@ -1,0 +1,76 @@
+name: Jarvis
+version: "1.4.0"
+slug: jarvis
+description: AI smart-home assistant — Telegram bot + proactive HA agent
+url: https://github.com/brookwarner/home-assistant-jarvis
+arch:
+  - aarch64
+init: false
+startup: application
+boot: auto
+# Supervisor restarts the container if the webhook health-check port stops answering.
+watchdog: "tcp://[HOST]:8765"
+# Share the host network so HA's rest_command (localhost:8765) reaches the webhook,
+# the bot reaches the HA API, and the watchdog can probe the port.
+host_network: true
+# Read/write access to /config so the add-on runs the deployed code in /config/jarvis
+# and its .env, and can read/write its data files.
+map:
+  - config:rw
+# Options surfaced in the add-on Configuration screen. Blank/unset falls back to
+# /config/jarvis/.env (run.sh only exports non-empty values). The optional `models`
+# and `secrets` groups appear under "Show unused optional configuration options".
+options:
+  log_level: info
+  proactive_enabled: true
+  proactive_poll_minutes: 15
+  default_mode: standard
+  proactive_watch_group: group.jarvis_watch
+  proactive_watch_substrings:
+    - garage_door
+    - front_door
+    - back_door
+    - moisture
+    - leak
+    - smoke
+    - water_sensor
+    - caravan_temperature
+  proactive_watch_domains:
+    - lock
+  # Nested groups must be present even when all their fields are optional, or the
+  # add-on fails validation ("Missing option 'models'"). Empty-dict defaults satisfy
+  # that while keeping every field optional (blank -> falls back to .env).
+  models: {}
+  secrets: {}
+schema:
+  log_level: list(debug|info|warning|error)
+  proactive_enabled: bool
+  proactive_poll_minutes: int(1,180)
+  # Operating mode when the input_select is absent. Switch live via input_select.jarvis_mode
+  # (Dropdown helper) or by telling Jarvis in Telegram ("go quiet", "away mode", ...).
+  default_mode: list(quiet|standard|away|storm)
+  mode_entity: str?
+  # The entity_id of a HA Group helper whose members are watched. Create the group via
+  # Settings > Devices & Services > Helpers > Group (that editor has the entity picker);
+  # members are read live each poll, no restart needed.
+  proactive_watch_group: str?
+  proactive_watch_substrings:
+    - str
+  proactive_watch_domains:
+    - str
+  bot_name: str?
+  owner_name: str?
+  whisper_model: str?
+  models:
+    triage: str?
+    briefing: str?
+    conversation: str?
+    proactive: str?
+    opus: str?
+  secrets:
+    telegram_bot_token: password?
+    telegram_chat_id: str?
+    ha_url: str?
+    ha_token: password?
+    openrouter_api_key: password?
+    groq_api_key: password?
