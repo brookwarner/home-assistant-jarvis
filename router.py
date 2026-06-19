@@ -18,6 +18,32 @@ except Exception:
 litellm.set_verbose = False
 
 
+def build_cached_messages(messages: list[dict], model: str) -> list[dict]:
+    """Return a copy of ``messages`` with Anthropic prompt caching enabled on the
+    system prompt. Marking the system block caches the whole prefix before it
+    (tools render first, so tools + system cache under one breakpoint), billed at
+    ~0.1x on repeat calls. No-op for non-Anthropic models (OpenRouter passthrough
+    caching is unreliable) and when there is no system message."""
+    if not model.startswith("anthropic/"):
+        return messages
+    out: list[dict] = []
+    marked = False
+    for m in messages:
+        if not marked and m.get("role") == "system" and isinstance(m.get("content"), str):
+            out.append({
+                "role": "system",
+                "content": [{
+                    "type": "text",
+                    "text": m["content"],
+                    "cache_control": {"type": "ephemeral"},
+                }],
+            })
+            marked = True
+        else:
+            out.append(m)
+    return out
+
+
 def _get_model(agent: str) -> str:
     from jarvis.config import config
     return {

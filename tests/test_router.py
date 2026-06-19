@@ -39,3 +39,32 @@ async def test_triage_model_uses_configured_model(mock_env):
     call_kwargs = mock_ac.call_args[1]
     # Triage uses whatever TRIAGE_MODEL resolves to (defaults to direct-Anthropic Haiku).
     assert call_kwargs["model"] == config.TRIAGE_MODEL
+
+
+from jarvis.router import build_cached_messages
+
+
+def test_build_cached_messages_marks_system_for_anthropic():
+    msgs = [
+        {"role": "system", "content": "BIG STATIC PROMPT"},
+        {"role": "user", "content": "hi"},
+    ]
+    out = build_cached_messages(msgs, "anthropic/claude-haiku-4-5")
+    assert out[0]["content"] == [
+        {"type": "text", "text": "BIG STATIC PROMPT",
+         "cache_control": {"type": "ephemeral"}}
+    ]
+    assert out[1] == {"role": "user", "content": "hi"}
+    assert msgs[0]["content"] == "BIG STATIC PROMPT"
+
+
+def test_build_cached_messages_noop_for_non_anthropic():
+    msgs = [{"role": "system", "content": "X"}, {"role": "user", "content": "y"}]
+    out = build_cached_messages(msgs, "openrouter/anthropic/claude-4.6-sonnet")
+    assert out == msgs
+
+
+def test_build_cached_messages_no_system_is_noop():
+    msgs = [{"role": "user", "content": "y"}]
+    out = build_cached_messages(msgs, "anthropic/claude-haiku-4-5")
+    assert out == msgs
