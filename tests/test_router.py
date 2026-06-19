@@ -68,3 +68,17 @@ def test_build_cached_messages_no_system_is_noop():
     msgs = [{"role": "user", "content": "y"}]
     out = build_cached_messages(msgs, "anthropic/claude-haiku-4-5")
     assert out == msgs
+
+
+async def test_complete_passes_cached_messages_for_anthropic(mock_env, monkeypatch):
+    monkeypatch.setenv("BRIEFING_MODEL", "anthropic/claude-haiku-4-5")
+    mock_resp = MagicMock()
+    mock_resp.choices = [MagicMock(message=MagicMock(content="ok"))]
+    from jarvis import router
+    with patch("litellm.acompletion", new_callable=AsyncMock, return_value=mock_resp) as mock_ac:
+        await router.complete("briefing", [
+            {"role": "system", "content": "S"},
+            {"role": "user", "content": "U"},
+        ])
+    sent = mock_ac.call_args.kwargs["messages"]
+    assert sent[0]["content"][0]["cache_control"] == {"type": "ephemeral"}

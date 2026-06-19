@@ -84,7 +84,7 @@ async def complete(
 
     response = await litellm.acompletion(
         model=model,
-        messages=messages,
+        messages=build_cached_messages(messages, model),
         temperature=temperature,
         max_tokens=max_tokens,
         fallbacks=fallbacks,
