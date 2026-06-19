@@ -70,6 +70,18 @@ async def set_caravan(ha_client: Any, enabled: bool, trigger_now: bool = False) 
             results.append({"entity_id": eid, "status": service})
         except Exception as e:
             results.append({"entity_id": eid, "error": str(e)})
+    # When disabling, also force the physical heater plugs off now. The control entities
+    # above (toggle + automation) only stop *future* auto-heat; a heater the automation
+    # already switched on would otherwise keep running. We don't touch these when enabling —
+    # the thermostat automation decides when to actually fire the heaters.
+    if not enabled:
+        for eid in config.CARAVAN_HEATER_SWITCHES:
+            dom = _domain(eid) or "homeassistant"
+            try:
+                await ha_client.call_service(dom, "turn_off", {"entity_id": eid})
+                results.append({"entity_id": eid, "status": "turn_off"})
+            except Exception as e:
+                results.append({"entity_id": eid, "error": str(e)})
     if enabled and trigger_now:
         for eid in entities:
             if _domain(eid) == "automation":

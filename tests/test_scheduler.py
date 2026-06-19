@@ -408,6 +408,7 @@ async def test_caravan_safety_net_forces_off_when_unanswered():
 
     config.CARAVAN_PROMPT_ENABLED = True
     config.CARAVAN_ENTITIES = ["input_boolean.caravan_heater_enabled"]
+    config.CARAVAN_HEATER_SWITCHES = []  # heater-off-on-disable covered in test_conversation
     caravan.mark_prompt_sent()  # question asked, no decision made
 
     mock_ha = MagicMock()
@@ -433,6 +434,7 @@ async def test_caravan_safety_net_silent_when_already_off():
 
     config.CARAVAN_PROMPT_ENABLED = True
     config.CARAVAN_ENTITIES = ["input_boolean.caravan_heater_enabled"]
+    config.CARAVAN_HEATER_SWITCHES = []  # heater-off-on-disable covered in test_conversation
     caravan.mark_prompt_sent()
 
     mock_ha = MagicMock()
@@ -456,6 +458,7 @@ async def test_caravan_safety_net_skips_when_decided():
 
     config.CARAVAN_PROMPT_ENABLED = True
     config.CARAVAN_ENTITIES = ["input_boolean.caravan_heater_enabled"]
+    config.CARAVAN_HEATER_SWITCHES = []  # heater-off-on-disable covered in test_conversation
     caravan.mark_prompt_sent()
     caravan.mark_decided()  # user replied
 

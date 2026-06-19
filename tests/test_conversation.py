@@ -147,6 +147,7 @@ async def test_set_caravan_heating_enables_each_entity_by_domain():
     config.CARAVAN_ENTITIES = [
         "input_boolean.caravan_heater_enabled", "automation.warm_caravan_on_cold_workdays",
     ]
+    config.CARAVAN_HEATER_SWITCHES = ["switch.oil_heater", "switch.fan_heater"]
     mock_ha = MagicMock(spec=HAClient)
     mock_ha.call_service = AsyncMock(return_value=[])
     agent = ConversationAgent(mock_ha)
@@ -155,7 +156,8 @@ async def test_set_caravan_heating_enables_each_entity_by_domain():
 
     assert result["enabled"] is True
     calls = mock_ha.call_service.await_args_list
-    # Each entity switched via its own domain, all turn_on.
+    # Each control entity switched via its own domain, all turn_on. The physical heater
+    # switches are left untouched on enable — the thermostat automation decides when to fire.
     assert {(c.args[0], c.args[1], c.args[2]["entity_id"]) for c in calls} == {
         ("input_boolean", "turn_on", "input_boolean.caravan_heater_enabled"),
         ("automation", "turn_on", "automation.warm_caravan_on_cold_workdays"),
@@ -171,6 +173,7 @@ async def test_set_caravan_heating_disables_and_can_trigger():
     config.CARAVAN_ENTITIES = [
         "input_boolean.caravan_heater_enabled", "automation.warm_caravan_on_cold_workdays",
     ]
+    config.CARAVAN_HEATER_SWITCHES = ["switch.oil_heater", "switch.fan_heater"]
     mock_ha = MagicMock(spec=HAClient)
     mock_ha.call_service = AsyncMock(return_value=[])
     agent = ConversationAgent(mock_ha)
@@ -178,6 +181,9 @@ async def test_set_caravan_heating_disables_and_can_trigger():
     off = await agent._execute_tool("set_caravan_heating", {"enabled": False})
     assert off["enabled"] is False
     assert {c.args[1] for c in mock_ha.call_service.await_args_list} == {"turn_off"}
+    # Disabling also force-switches the physical heater plugs off, not just the controls.
+    off_targets = {c.args[2]["entity_id"] for c in mock_ha.call_service.await_args_list}
+    assert "switch.oil_heater" in off_targets and "switch.fan_heater" in off_targets
 
     mock_ha.call_service.reset_mock()
     on = await agent._execute_tool("set_caravan_heating", {"enabled": True, "trigger_now": True})

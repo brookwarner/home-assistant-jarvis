@@ -62,6 +62,18 @@ class Config:
         ).split(",")
         if s.strip()
     ]
+    # Physical heater plugs the auto-heat automation switches on. Disabling the automation
+    # only stops it managing them in future — it leaves any running heaters on. So when
+    # caravan heating is turned OFF, Jarvis also force-switches these off now. They are NOT
+    # turned on when enabling: the thermostat automation owns that decision. Comma-separated.
+    CARAVAN_HEATER_SWITCHES: list[str] = [
+        s.strip()
+        for s in os.environ.get(
+            "CARAVAN_HEATER_SWITCHES",
+            "switch.zigbee_plug_1_office,switch.tz3000_typdpbpg_ts011f_2",
+        ).split(",")
+        if s.strip()
+    ]
     # Safety net: if no explicit caravan decision is made by this local hour, the
     # auto-heat is forced off so an unused caravan never heats. 0-23; set via add-on.
     CARAVAN_SAFETY_HOUR: int = int(os.environ.get("CARAVAN_SAFETY_HOUR", "9"))

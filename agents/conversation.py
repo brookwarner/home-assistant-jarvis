@@ -288,7 +288,9 @@ TOOLS = [
                 "Enable or disable caravan heating: the master toggle, the auto-heat automation, "
                 "and any heartbeats (the entities in CARAVAN_ENTITIES). Call with enabled=true when "
                 "the user says they plan to use the caravan that day (typically in reply to the "
-                "morning briefing's caravan question), and enabled=false when they won't be. "
+                "morning briefing's caravan question), and enabled=false when they won't be — or "
+                "when they say they're done/finished in the caravan. Disabling also switches the "
+                "physical heater plugs off immediately, so any running heaters actually stop. "
                 "Optionally trigger the auto-heat right away."
             ),
             "parameters": {
@@ -521,7 +523,9 @@ def _operational_layer() -> str:
         "Caravan auto-heat — the morning briefing asks whether the user will use the caravan that day. "
         "When they confirm they will, call set_caravan_heating(enabled=true) to switch on the master "
         "toggle, the auto-heat automation and its heartbeats; if they say they won't, call "
-        "set_caravan_heating(enabled=false). Use trigger_now=true only if they want heating to start "
+        "set_caravan_heating(enabled=false). Also call set_caravan_heating(enabled=false) whenever the "
+        "user says they're done or finished in the caravan — that switches the physical heater plugs off "
+        "now, not just the automation. Use trigger_now=true only if they want heating to start "
         "immediately. If the user never answers, a safety net forces the auto-heat off mid-morning.\n\n"
         "TELEGRAM TOOLS:\n"
         "send_message — pushes a message to the user immediately, mid-turn. Use to acknowledge long tasks "
