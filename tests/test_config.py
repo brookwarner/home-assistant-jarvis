@@ -73,3 +73,17 @@ def test_timezone_blank_by_default(monkeypatch):
     import jarvis.config as c
     importlib.reload(c)
     assert c.config.TIMEZONE == ""  # blank => follow HA at startup
+
+
+def test_quiet_window_defaults(monkeypatch):
+    for k, v in {
+        "TELEGRAM_BOT_TOKEN": "t", "TELEGRAM_CHAT_ID": "1", "HA_TOKEN": "h",
+    }.items():
+        monkeypatch.setenv(k, v)
+    monkeypatch.delenv("PROACTIVE_QUIET_START", raising=False)
+    monkeypatch.delenv("PROACTIVE_QUIET_END", raising=False)
+    import importlib
+    from jarvis import config as cfgmod
+    importlib.reload(cfgmod)
+    assert cfgmod.config.PROACTIVE_QUIET_START == 23
+    assert cfgmod.config.PROACTIVE_QUIET_END == 6

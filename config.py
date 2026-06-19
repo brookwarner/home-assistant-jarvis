@@ -42,6 +42,11 @@ class Config:
         "true", "1", "yes", "on",
     )
     POLL_INTERVAL_MIN: int = int(os.environ.get("POLL_INTERVAL_MIN", "15"))
+    # Overnight quiet window: during these local hours the proactive poll skips the
+    # expensive model entirely (no unprompted nighttime notifications, no spend).
+    # 0-23. START==END disables the window. START>END means an overnight wrap.
+    PROACTIVE_QUIET_START: int = int(os.environ.get("PROACTIVE_QUIET_START", "23"))
+    PROACTIVE_QUIET_END: int = int(os.environ.get("PROACTIVE_QUIET_END", "6"))
     # Caravan: the morning briefing can ask whether you'll use the caravan that day.
     # When you confirm, Jarvis enables these entities — the master heater toggle plus
     # the auto-heat automation (and any heartbeats). Each entity is switched using its
