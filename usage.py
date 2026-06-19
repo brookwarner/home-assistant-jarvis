@@ -28,6 +28,7 @@ def log_completion(response: Any, agent: str) -> None:
         usage = getattr(response, "usage", None)
         in_tok = getattr(usage, "prompt_tokens", None) if usage else None
         out_tok = getattr(usage, "completion_tokens", None) if usage else None
+        cache_read = getattr(usage, "cache_read_input_tokens", None) if usage else None
 
         hidden = getattr(response, "_hidden_params", None) or {}
         cost = hidden.get("response_cost")
@@ -43,11 +44,12 @@ def log_completion(response: Any, agent: str) -> None:
 
         cost_str = f"${cost:.5f}" if isinstance(cost, (int, float)) else "n/a"
         logger.info(
-            "cost agent=%s model=%s in=%s out=%s cost=%s | session: %d reqs $%.4f",
+            "cost agent=%s model=%s in=%s out=%s cache_read=%s cost=%s | session: %d reqs $%.4f",
             agent,
             model,
             in_tok,
             out_tok,
+            cache_read,
             cost_str,
             int(_totals["requests"]),
             _totals["cost"],
