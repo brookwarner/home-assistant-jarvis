@@ -622,7 +622,7 @@ async def test_run_with_tools_caches_system_prefix(mock_env, monkeypatch):
 
     sent = mock_ac.call_args.kwargs["messages"]
     assert sent[0]["role"] == "system"
-    assert sent[0]["content"][0]["cache_control"] == {"type": "ephemeral"}
+    assert sent[0]["content"][0]["cache_control"] == {"type": "ephemeral", "ttl": "1h"}
 
 
 async def test_run_opus_system_prompt_is_static_for_caching(mock_env, monkeypatch):

@@ -35,7 +35,7 @@ def build_cached_messages(messages: list[dict], model: str) -> list[dict]:
                 "content": [{
                     "type": "text",
                     "text": m["content"],
-                    "cache_control": {"type": "ephemeral"},
+                    "cache_control": {"type": "ephemeral", "ttl": "1h"},
                 }],
             })
             marked = True

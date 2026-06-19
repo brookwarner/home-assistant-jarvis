@@ -52,7 +52,7 @@ def test_build_cached_messages_marks_system_for_anthropic():
     out = build_cached_messages(msgs, "anthropic/claude-haiku-4-5")
     assert out[0]["content"] == [
         {"type": "text", "text": "BIG STATIC PROMPT",
-         "cache_control": {"type": "ephemeral"}}
+         "cache_control": {"type": "ephemeral", "ttl": "1h"}}
     ]
     assert out[1] == {"role": "user", "content": "hi"}
     assert msgs[0]["content"] == "BIG STATIC PROMPT"
@@ -81,4 +81,4 @@ async def test_complete_passes_cached_messages_for_anthropic(mock_env, monkeypat
             {"role": "user", "content": "U"},
         ])
     sent = mock_ac.call_args.kwargs["messages"]
-    assert sent[0]["content"][0]["cache_control"] == {"type": "ephemeral"}
+    assert sent[0]["content"][0]["cache_control"] == {"type": "ephemeral", "ttl": "1h"}
