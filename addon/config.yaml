@@ -37,6 +37,8 @@ options:
     - caravan_temperature
   proactive_watch_domains:
     - lock
+  proactive_quiet_start: 23
+  proactive_quiet_end: 6
   caravan_prompt_enabled: true
   caravan_safety_hour: 9
   caravan_entities:
@@ -66,6 +68,8 @@ schema:
   # Morning briefing asks whether you'll use the caravan that day; on a yes, Jarvis
   # enables these entities (master toggle + auto-heat automation + heartbeats), each
   # switched by its own domain. If unanswered by caravan_safety_hour, heating is forced off.
+  proactive_quiet_start: int(0,23)?
+  proactive_quiet_end: int(0,23)?
   caravan_prompt_enabled: bool?
   caravan_safety_hour: int(0,23)?
   caravan_entities:

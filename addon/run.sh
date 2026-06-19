@@ -21,6 +21,8 @@ scalars = {
     'default_mode': 'DEFAULT_MODE', 'mode_entity': 'MODE_ENTITY',
     'bot_name': 'BOT_NAME', 'owner_name': 'OWNER_NAME',
     'whisper_model': 'WHISPER_MODEL',
+    'proactive_quiet_start': 'PROACTIVE_QUIET_START',
+    'proactive_quiet_end': 'PROACTIVE_QUIET_END',
     'caravan_prompt_enabled': 'CARAVAN_PROMPT_ENABLED',
     'caravan_safety_hour': 'CARAVAN_SAFETY_HOUR',
 }
