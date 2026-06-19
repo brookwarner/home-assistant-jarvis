@@ -8,6 +8,7 @@ from collections import defaultdict, deque
 from pathlib import Path
 from typing import Any
 import litellm
+from jarvis.router import build_cached_messages
 from jarvis.usage import log_completion
 
 logger = logging.getLogger(__name__)
@@ -739,7 +740,7 @@ class ConversationAgent:
         while rounds < round_cap:
             response = await litellm.acompletion(
                 model=active_model,
-                messages=msgs,
+                messages=build_cached_messages(msgs, active_model),
                 tools=TOOLS,
                 tool_choice="auto",
                 temperature=0.5,
@@ -777,7 +778,7 @@ class ConversationAgent:
                     msgs.append({"role": "assistant", "content": None})
                     msgs.append({"role": "user", "content": "Based on everything you found, give your answer now."})
                     retry = await litellm.acompletion(
-                        model=active_model, messages=msgs, temperature=0.5, max_tokens=1024, **extra,
+                        model=active_model, messages=build_cached_messages(msgs, active_model), temperature=0.5, max_tokens=1024, **extra,
                     )
                     log_completion(retry, "conversation")
                     content = retry.choices[0].message.content or "I checked but couldn't formulate a response."
@@ -793,7 +794,7 @@ class ConversationAgent:
         # Hit max tool rounds — force a final response without tools
         msgs.append({"role": "user", "content": "Based on everything you found, give your answer now."})
         response = await litellm.acompletion(
-            model=active_model, messages=msgs, temperature=0.5, max_tokens=1024, **extra,
+            model=active_model, messages=build_cached_messages(msgs, active_model), temperature=0.5, max_tokens=1024, **extra,
         )
         log_completion(response, "conversation")
         content = response.choices[0].message.content or "I checked but couldn't formulate a response."
@@ -838,7 +839,7 @@ class ConversationAgent:
         for _ in range(8):  # Opus gets more rounds
             response = await litellm.acompletion(
                 model=config.OPUS_MODEL,
-                messages=msgs,
+                messages=build_cached_messages(msgs, config.OPUS_MODEL),
                 tools=opus_tools,
                 tool_choice="auto",
                 temperature=0.3,
@@ -863,7 +864,7 @@ class ConversationAgent:
 
         # Force final response after max rounds
         response = await litellm.acompletion(
-            model=config.OPUS_MODEL, messages=msgs, temperature=0.3, max_tokens=4096, **extra,
+            model=config.OPUS_MODEL, messages=build_cached_messages(msgs, config.OPUS_MODEL), temperature=0.3, max_tokens=4096, **extra,
         )
         log_completion(response, "opus")
         return {"opus_result": response.choices[0].message.content or "Done."}

@@ -601,3 +601,25 @@ async def test_run_proactive_passes_model_override():
                                    model="openrouter/anthropic/claude-sonnet-4-6")
 
     assert "sonnet" in captured[0].lower()
+
+
+async def test_run_with_tools_caches_system_prefix(mock_env, monkeypatch):
+    monkeypatch.setenv("CONVERSATION_MODEL", "anthropic/claude-haiku-4-5")
+    from jarvis.agents.conversation import ConversationAgent
+    from jarvis.ha_client import HAClient
+
+    mock_ha = MagicMock(spec=HAClient)
+    agent = ConversationAgent(mock_ha)
+    agent._model = "anthropic/claude-haiku-4-5"
+
+    mock_resp = MagicMock()
+    mock_resp.choices = [MagicMock(
+        finish_reason="stop",
+        message=MagicMock(content="done", tool_calls=None),
+    )]
+    with patch("litellm.acompletion", new_callable=AsyncMock, return_value=mock_resp) as mock_ac:
+        await agent._run_with_tools([{"role": "user", "content": "hi"}])
+
+    sent = mock_ac.call_args.kwargs["messages"]
+    assert sent[0]["role"] == "system"
+    assert sent[0]["content"][0]["cache_control"] == {"type": "ephemeral"}
