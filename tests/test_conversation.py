@@ -623,3 +623,46 @@ async def test_run_with_tools_caches_system_prefix(mock_env, monkeypatch):
     sent = mock_ac.call_args.kwargs["messages"]
     assert sent[0]["role"] == "system"
     assert sent[0]["content"][0]["cache_control"] == {"type": "ephemeral"}
+
+
+async def test_run_opus_system_prompt_is_static_for_caching(mock_env, monkeypatch):
+    """_run_opus must NOT embed a timestamp in the system prompt (cache killer).
+
+    The volatile now-stamp must ride on the user turn instead, keeping the
+    cached system prefix byte-stable across calls.
+    """
+    monkeypatch.setenv("OPUS_MODEL", "anthropic/claude-opus-4-6")
+    from jarvis.agents.conversation import ConversationAgent
+    from jarvis.ha_client import HAClient
+
+    mock_ha = MagicMock(spec=HAClient)
+    agent = ConversationAgent(mock_ha)
+
+    mock_resp = MagicMock()
+    mock_resp.choices = [MagicMock(
+        finish_reason="stop",
+        message=MagicMock(content="done", tool_calls=None),
+    )]
+    with patch("litellm.acompletion", new_callable=AsyncMock, return_value=mock_resp) as mock_ac:
+        await agent._run_opus("refactor the thing")
+
+    sent = mock_ac.call_args.kwargs["messages"]
+    # System block may be a string or a list of content dicts (from build_cached_messages)
+    system_content = sent[0]["content"]
+    if isinstance(system_content, list):
+        system_text = " ".join(
+            block.get("text", "") if isinstance(block, dict) else str(block)
+            for block in system_content
+        )
+    else:
+        system_text = system_content
+
+    assert "Current local date and time" not in system_text, (
+        "Timestamp in system prompt invalidates the cache on every call"
+    )
+    # The volatile now-stamp must ride on the user turn instead
+    assert any(
+        "(now:" in (m.get("content") or "")
+        for m in sent
+        if m["role"] == "user"
+    ), "Expected '(now:' timestamp in user message"

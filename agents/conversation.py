@@ -815,13 +815,12 @@ class ConversationAgent:
             "You handle complex tasks: refactors, multi-file edits, debugging, new automations.\n"
             "You have the same tools as the main agent. Work carefully, verify your changes.\n"
             "Return a clear summary of what you did.\n\n"
-            f"Current local date and time: {_now_str()}\n"
-        f"TIMEZONE: All HA timestamps are UTC. Local timezone is {_tz()}. Convert all times.\n"
+            f"TIMEZONE: All HA timestamps are UTC. Local timezone is {_tz()}. Convert all times.\n"
             "FORMATTING: Plain text only. No markdown."
         )
         msgs = [
             {"role": "system", "content": opus_system},
-            {"role": "user", "content": task},
+            {"role": "user", "content": f"(now: {_now_str()}) {task}"},
         ]
 
         extra: dict = {}
