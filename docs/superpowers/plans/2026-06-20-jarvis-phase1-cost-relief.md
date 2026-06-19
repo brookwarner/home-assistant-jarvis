@@ -462,25 +462,26 @@ Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
 
 **Files:** none (operational change on the HAOS box; documented here and in the README)
 
-**Context:** Caching is reliable only on `anthropic/` models, and Haiku is ~3× cheaper than Sonnet. The box `.env` currently overrides the proactive/conversation models to a `openrouter/...claude-4.6-sonnet` string. This task switches routine traffic to direct-Anthropic Haiku and confirms caching takes effect. This is the single biggest immediate cost lever and needs no code.
+**Context:** Caching is reliable only on `anthropic/` models, and Haiku is ~3× cheaper than Sonnet. **Confirmed live state (2026-06-20):** the box `.env` has `ANTHROPIC_API_KEY` *commented out*, `OPENROUTER_API_KEY` set, and every model on `openrouter/...` — i.e. all traffic routes through **OpenRouter BYOK** (tokens bill to the Anthropic account via the user's key, plus OpenRouter's ~5% markup; that's why spend appeared on the Anthropic Console). Because the models are `openrouter/...`, the caching helper from Tasks 1–3 is a **no-op until this switch** — so this task is the prerequisite that activates caching *and* drops the markup *and* moves routine traffic to Haiku. Biggest single lever; no code. **Keep OpenRouter for the free triage model.**
 
-- [ ] **Step 1: Inspect the live model config**
+- [ ] **Step 1: Confirm the live model config**
 
 ```bash
-ssh haos 'grep -E "MODEL|OPENROUTER|ANTHROPIC_API_KEY" /config/jarvis/.env'
+ssh haos 'grep -E "MODEL|OPENROUTER_API_KEY|ANTHROPIC_API_KEY" /config/jarvis/.env'
 ```
 
-Expected: see which models are overridden (likely `CONVERSATION_MODEL` / `PROACTIVE_MODEL` set to an `openrouter/...sonnet` string), and confirm `ANTHROPIC_API_KEY` is present.
+Confirmed values: `ANTHROPIC_API_KEY` commented; `OPENROUTER_API_KEY` set; `CONVERSATION_MODEL`/`BRIEFING_MODEL`/`PROACTIVE_MODEL`=`openrouter/anthropic/claude-sonnet-4-6`; `OPUS_MODEL`=`openrouter/anthropic/claude-opus-4.6`; `TRIAGE_MODEL`=`openrouter/meta-llama/llama-3.2-3b-instruct:free`.
 
-- [ ] **Step 2: Set routine models to direct-Anthropic Haiku**
+- [ ] **Step 2: Switch the expensive paths to direct-Anthropic Haiku (keep free triage)**
 
 Edit `/config/jarvis/.env` on the box so:
+- **Uncomment `ANTHROPIC_API_KEY`** (remove the leading `#`) — required for the `anthropic/` branch in `router.py` and for caching.
 - `PROACTIVE_MODEL=anthropic/claude-haiku-4-5`
-- `TRIAGE_MODEL=anthropic/claude-haiku-4-5`
 - `BRIEFING_MODEL=anthropic/claude-haiku-4-5`
 - `CONVERSATION_MODEL=anthropic/claude-haiku-4-5` (interactive chat; revisit to Sonnet only if quality drops)
-
-Keep `OPUS_MODEL` for the delegate path. Leave `OPENROUTER_API_KEY` unset/empty so the `anthropic/` branch in `router.py` is taken.
+- `OPUS_MODEL=anthropic/claude-opus-4-6` (direct; note `4-6`, not `4.6`)
+- **Keep** `OPENROUTER_API_KEY` set and `TRIAGE_MODEL=openrouter/meta-llama/llama-3.2-3b-instruct:free` — triage stays free; `router.py` routes per-model by prefix.
+- (Security) Rotate the `ANTHROPIC_API_KEY` and `OPENROUTER_API_KEY` — both were exposed in a screenshot during planning.
 
 - [ ] **Step 3: Restart the add-on and verify**
 
