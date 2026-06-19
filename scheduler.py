@@ -126,6 +126,18 @@ def _mode_poll_min(mode: str) -> int:
     return m["poll_min"] if m["poll_min"] is not None else _standard_poll_min()
 
 
+def _in_quiet_window(hour: int) -> bool:
+    """True if the given local hour is inside the proactive quiet window.
+    START==END disables the window; START>END is an overnight wrap."""
+    from jarvis.config import config
+    start, end = config.PROACTIVE_QUIET_START, config.PROACTIVE_QUIET_END
+    if start == end:
+        return False
+    if start < end:
+        return start <= hour < end
+    return hour >= start or hour < end  # overnight wrap
+
+
 async def resolve_mode(ha_client: Any) -> str:
     """Active mode from MODE_ENTITY (a HA input_select), validated against MODES.
     Falls back to DEFAULT_MODE when the entity is missing/unreadable/unknown."""
@@ -362,6 +374,19 @@ def build_scheduler(
             if _last_proactive_run is not None and (now - _last_proactive_run) < _mode_poll_min(mode) * 60:
                 return
             _last_proactive_run = now
+
+            import datetime as _dt
+            if _in_quiet_window(_dt.datetime.now().hour):
+                states = await ha_client.get_states()
+                group_members = await _get_watch_group_members(ha_client)
+                watched_states = [
+                    s for s in states
+                    if _is_watched_in_mode(s.get("entity_id", ""), mode)
+                    or s.get("entity_id", "") in group_members
+                ]
+                _last_snapshot, _ = compute_state_diff(watched_states, _last_snapshot)
+                logger.debug("insight_poll: quiet window, snapshot refreshed, no model call")
+                return
 
             states = await ha_client.get_states()
             # Opt-in: an entity may trigger an unprompted notification if it's in the

@@ -511,3 +511,23 @@ def test_mode_poll_min_values():
     assert _mode_poll_min("away") == 5
     assert _mode_poll_min("storm") == 5
     assert _mode_poll_min("standard") == int(config.POLL_INTERVAL_MIN)
+
+
+from jarvis.scheduler import _in_quiet_window
+
+
+def test_in_quiet_window_overnight_wrap(monkeypatch):
+    monkeypatch.setattr("jarvis.config.config.PROACTIVE_QUIET_START", 23)
+    monkeypatch.setattr("jarvis.config.config.PROACTIVE_QUIET_END", 6)
+    assert _in_quiet_window(23) is True
+    assert _in_quiet_window(2) is True
+    assert _in_quiet_window(5) is True
+    assert _in_quiet_window(6) is False
+    assert _in_quiet_window(14) is False
+
+
+def test_in_quiet_window_disabled_when_equal(monkeypatch):
+    monkeypatch.setattr("jarvis.config.config.PROACTIVE_QUIET_START", 0)
+    monkeypatch.setattr("jarvis.config.config.PROACTIVE_QUIET_END", 0)
+    assert _in_quiet_window(0) is False
+    assert _in_quiet_window(3) is False
