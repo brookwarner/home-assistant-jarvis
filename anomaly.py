@@ -111,8 +111,8 @@ def _descriptor(name: str, yesterday: float, med: float, unit: str) -> str:
     mult = (yesterday / med) if med else math.inf
     mult_s = f"{mult:.1f}x" if math.isfinite(mult) else "n/a"
     return (
-        f"{name}: {yesterday:g}{u} yesterday vs ~{med:g}{u} typical "
-        f"({sign}{delta:g}{u}, {mult_s})"
+        f"{name}: {yesterday:g}{u} yesterday vs ~{med:g}{u} this home's own recent "
+        f"typical ({sign}{delta:g}{u}, {mult_s})"
     )
 
 

@@ -30,6 +30,18 @@ def test_compute_baseline_insufficient_history():
     assert anomaly.compute_baseline([100, 101, 102]) is None  # < MIN_DAYS
 
 
+def test_descriptor_frames_baseline_as_this_homes_own():
+    """The 'typical' figure is this home's own recent median, not a regional/national
+    average. The descriptor must say so explicitly so the model stops confabulating
+    'X% of the NZ/Auckland average' from the bare multiplier."""
+    from jarvis.anomaly import _descriptor
+    d = _descriptor("water", 0.42, 0.25, "m³").lower()
+    assert "this home's own recent" in d
+    # And it must NOT imply an external benchmark.
+    for bad in ("nz average", "auckland", "regional", "national"):
+        assert bad not in d
+
+
 def test_score_day_bands():
     from jarvis import anomaly
     base = {"median": 100.0, "mad": 7.5}

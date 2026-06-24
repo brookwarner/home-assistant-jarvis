@@ -38,4 +38,14 @@ def test_briefing_prompt_includes_voice():
     from jarvis.agents import briefing
     p = briefing._load_system_prompt()
     assert "briefing" in p.lower()
+
+
+def test_briefing_prompt_forbids_regional_average_framing():
+    """Anomaly baselines are this home's OWN recent median. The prompt must forbid
+    describing them as a regional/national/city average so the model stops inventing
+    '174% of the NZ/Auckland average' from the bare multiplier."""
+    from jarvis.agents import briefing
+    p = briefing._load_system_prompt().lower()
+    assert "this home's own" in p
+    assert "average" in p  # mentions the forbidden framing it must avoid
     assert "no markdown" in p.lower()

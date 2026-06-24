@@ -29,7 +29,14 @@ def _load_system_prompt() -> str:
         "Report what CHANGED since yesterday — do not re-list standing facts (water %, the same offline "
         "devices, the same backup time) that were already true in the previous briefing. Don't invent data. "
         "If an 'Anomalies detected' list is provided, lead with the notable ones and explain each in your "
-        "own voice (what's unusual, by how much); if the list is empty or absent, don't mention anomalies."
+        "own voice (what's unusual, by how much); if the list is empty or absent, don't mention anomalies. "
+        "Every 'typical'/baseline figure in that list is THIS HOME'S OWN recent median, computed from its "
+        "own history — it is NOT a regional, city, or national average. Never describe a deviation as a "
+        "percentage 'of the NZ average', 'of the Auckland average', or any external benchmark; frame it as "
+        "high or low versus this home's own recent usage. Do not invent a comparison you were not given. "
+        "And don't re-headline the same standing deviation (e.g. water) morning after morning — if it has "
+        "been flagged on recent days and hasn't materially changed, it's the new normal, not news; mention "
+        "it briefly at most, or skip it."
     )
     return base + briefing_note
 
