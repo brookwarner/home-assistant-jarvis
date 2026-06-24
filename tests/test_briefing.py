@@ -40,12 +40,15 @@ def test_briefing_prompt_includes_voice():
     assert "briefing" in p.lower()
 
 
-def test_briefing_prompt_forbids_regional_average_framing():
-    """Anomaly baselines are this home's OWN recent median. The prompt must forbid
-    describing them as a regional/national/city average so the model stops inventing
-    '174% of the NZ/Auckland average' from the bare multiplier."""
+def test_briefing_prompt_forbids_invented_benchmarks_but_allows_real_ones():
+    """Anomaly baselines are this home's OWN recent median, and the only real peer signal
+    is Watercare's household_efficiency_band. The prompt must forbid inventing an external
+    average ('174% of the NZ average') while permitting figures that ARE in the data."""
     from jarvis.agents import briefing
     p = briefing._load_system_prompt().lower()
     assert "this home's own" in p
-    assert "average" in p  # mentions the forbidden framing it must avoid
+    # Forbids the confabulated external benchmark...
+    assert "nz average" in p or "external benchmark" in p
+    # ...but explicitly allows the real Watercare figures it could cite instead.
+    assert "household_efficiency_band" in p
     assert "no markdown" in p.lower()
