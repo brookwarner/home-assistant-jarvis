@@ -17,6 +17,13 @@ except Exception:
 # Suppress litellm verbose output
 litellm.set_verbose = False
 
+# Anthropic rejects history containing tool_use/tool_result blocks unless a tools=
+# param is also present. The conversation/opus agents make force-final-answer calls
+# that omit tools after running tool rounds, raising UnsupportedParamsError.
+# modify_params lets litellm inject a dummy tool so Anthropic accepts the history
+# while we still get text back.
+litellm.modify_params = True
+
 
 def build_cached_messages(messages: list[dict], model: str) -> list[dict]:
     """Return a copy of ``messages`` with Anthropic prompt caching enabled on the
