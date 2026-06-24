@@ -884,6 +884,11 @@ class ConversationAgent:
         delayed power-draw verification that self-heals if the caravan isn't actually
         heating — so a silent failure can't leave the user with a cold caravan."""
         from jarvis import caravan
+        # Cancel any in-flight verification from a prior enable — a fresh decision (or a
+        # disable) supersedes it, and a stale check could re-enable against the user's wish.
+        if self._caravan_verify_task and not self._caravan_verify_task.done():
+            self._caravan_verify_task.cancel()
+        self._caravan_verify_task = None
         result = await caravan.set_caravan(self._ha, enabled, trigger_now)
         caravan.mark_decided()
         if enabled and self._send_fn:

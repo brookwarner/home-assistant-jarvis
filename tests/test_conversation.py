@@ -216,6 +216,39 @@ async def test_enabling_caravan_arms_power_verification(monkeypatch):
     assert called.is_set()
 
 
+async def test_disabling_cancels_pending_verification(monkeypatch):
+    """If the user enables then changes their mind and disables within the verify window,
+    the pending power-draw check must be cancelled — otherwise it would see 'off' and
+    wrongly re-enable the heat against their wishes."""
+    import asyncio
+    from jarvis.agents.conversation import ConversationAgent
+    from jarvis.ha_client import HAClient
+    from jarvis.config import config
+
+    config.CARAVAN_ENTITIES = ["input_boolean.caravan_heater_enabled"]
+    config.CARAVAN_HEATER_SWITCHES = []
+    config.CARAVAN_VERIFY_DELAY_MIN = 0.02  # ~1.2s — long enough to cancel before it fires
+    mock_ha = MagicMock(spec=HAClient)
+    mock_ha.call_service = AsyncMock(return_value=[])
+
+    verify_calls = []
+
+    async def fake_verify(ha_client, send_fn):
+        verify_calls.append(True)
+        return {"ok": True}
+
+    monkeypatch.setattr("jarvis.caravan.verify_drawing", fake_verify)
+    agent = ConversationAgent(mock_ha, send_fn=AsyncMock())
+
+    await agent._execute_tool("set_caravan_heating", {"enabled": True})
+    task = agent._caravan_verify_task
+    assert task is not None
+    await agent._execute_tool("set_caravan_heating", {"enabled": False})
+    await asyncio.sleep(0)  # let the cancellation settle
+    assert task.cancelled() or task.done()
+    assert verify_calls == []
+
+
 def test_operational_prompt_forbids_claiming_untaken_caravan_action():
     """Root cause of the cold caravan: the model SAID 'heating enabled' but never called
     the tool. The prompt must forbid claiming a caravan action without actually calling
