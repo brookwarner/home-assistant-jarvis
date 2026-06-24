@@ -296,14 +296,15 @@ async def run_morning_briefing(
     """Generate and deliver the morning briefing. Shared by the scheduled 07:30 job and the
     manual /briefing command so both exercise the same flow: append the caravan question
     (arming the safety net), send, and record into history. Returns the sent text."""
-    from jarvis.agents.briefing import generate
+    from jarvis.agents.briefing import generate, fetch_water_context
     from jarvis.anomaly import detect_and_surface
     from jarvis.config import config
 
     states = await ha_client.get_states()
     summary = ha_client.get_state_summary(states, domains=WATCHED_DOMAINS)
     anomalies = await detect_and_surface(ha_client)  # [] on any failure
-    text = await generate(summary, anomalies=anomalies)
+    water_context = await fetch_water_context(ha_client)  # None on any failure
+    text = await generate(summary, anomalies=anomalies, water_context=water_context)
     if config.CARAVAN_PROMPT_ENABLED:
         from jarvis import caravan
         text = text.rstrip() + "\n\n" + CARAVAN_QUESTION

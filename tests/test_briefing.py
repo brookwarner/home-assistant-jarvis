@@ -34,6 +34,53 @@ async def test_generate_includes_time_context():
     assert "morning" in full_text.lower() or "briefing" in full_text.lower()
 
 
+async def test_fetch_water_context_includes_real_watercare_figures():
+    from unittest.mock import MagicMock
+    from jarvis.agents import briefing
+    from jarvis.config import config
+    config.WATERCARE_SENSOR = "sensor.watercare"
+    ha = MagicMock()
+    ha.get_state = AsyncMock(return_value={
+        "entity_id": "sensor.watercare", "state": "17000",
+        "attributes": {
+            "daily_average": 548, "household_efficiency_band": 4,
+            "current_period_cost": 65.36, "cost_currency": "NZD",
+            "billing_period_from": "2026-05-15T12:00:00.000Z",
+            "billing_period_to": "2026-06-14T12:00:00.000Z",
+        },
+    })
+    ctx = await briefing.fetch_water_context(ha)
+    assert ctx is not None
+    assert "548" in ctx
+    assert "efficiency band 4" in ctx.lower()
+    assert "own" in ctx.lower()  # framed as this home's own data
+
+
+async def test_fetch_water_context_none_when_sensor_unavailable():
+    from unittest.mock import MagicMock
+    from jarvis.agents import briefing
+    ha = MagicMock()
+    ha.get_state = AsyncMock(return_value={"state": "unavailable", "attributes": {}})
+    assert await briefing.fetch_water_context(ha) is None
+
+
+async def test_generate_includes_water_context():
+    from jarvis.agents.briefing import generate
+    captured = []
+
+    async def capture(*args, **kwargs):
+        captured.extend(kwargs.get("messages", args[1] if len(args) > 1 else []))
+        return "Morning."
+
+    with patch("jarvis.router.complete", new_callable=AsyncMock, side_effect=capture):
+        await generate(
+            "sensor.x: 1", anomalies=None,
+            water_context="Watercare (this home's own): efficiency band 4, ~548 L/day.",
+        )
+    full = " ".join(m["content"] for m in captured)
+    assert "efficiency band 4" in full
+
+
 def test_briefing_prompt_includes_voice():
     from jarvis.agents import briefing
     p = briefing._load_system_prompt()

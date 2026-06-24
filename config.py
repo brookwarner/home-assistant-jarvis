@@ -100,5 +100,9 @@ class Config:
     # Minutes to wait after enabling before the power-draw check runs (the thermostat
     # heartbeat fires every ~2 min, so give it a couple of cycles to actually switch on).
     CARAVAN_VERIFY_DELAY_MIN: float = float(os.environ.get("CARAVAN_VERIFY_DELAY_MIN", "5"))
+    # Watercare smart-meter sensor. Its attributes (this home's own daily_average and the
+    # Watercare household_efficiency_band) are surfaced into the briefing so any water
+    # mention is grounded in real figures rather than a confabulated 'NZ average'.
+    WATERCARE_SENSOR: str = os.environ.get("WATERCARE_SENSOR", "sensor.watercare")
 
 config = Config()

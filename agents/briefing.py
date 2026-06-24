@@ -44,7 +44,47 @@ def _load_system_prompt() -> str:
     return base + briefing_note
 
 
-async def generate(ha_state_summary: str, anomalies: list[str] | None = None) -> str:
+async def fetch_water_context(ha_client) -> str | None:
+    """A compact, factual water block from the Watercare sensor's real attributes — this
+    home's OWN daily_average and the Watercare household_efficiency_band — so the briefing
+    can speak about water from real figures instead of confabulating a regional average.
+    Returns None if the sensor is missing/unavailable or carries no useful figures."""
+    from jarvis.config import config
+    try:
+        st = await ha_client.get_state(config.WATERCARE_SENSOR)
+    except Exception:
+        return None
+    if not st:
+        return None
+    if str(st.get("state")).strip().lower() in ("unavailable", "unknown", "none", ""):
+        return None
+    a = st.get("attributes") or {}
+    parts: list[str] = []
+    avg = a.get("daily_average", a.get("currentPeriodAverage"))
+    if avg is not None:
+        parts.append(f"this home's own daily average ~{avg} L")
+    band = a.get("household_efficiency_band", a.get("currentHouseholdBand"))
+    if band is not None:
+        parts.append(f"Watercare efficiency band {band} (their peer rating, not an average)")
+    cost = a.get("current_period_cost")
+    if cost is not None:
+        parts.append(f"cost so far ${cost} {a.get('cost_currency', 'NZD')}")
+    pf, pt = a.get("billing_period_from"), a.get("billing_period_to")
+    if pf and pt:
+        parts.append(f"billing period {str(pf)[:10]} to {str(pt)[:10]}")
+    if not parts:
+        return None
+    return (
+        "Watercare (this home's OWN smart-meter data — NOT a regional/NZ/Auckland average): "
+        + "; ".join(parts) + "."
+    )
+
+
+async def generate(
+    ha_state_summary: str,
+    anomalies: list[str] | None = None,
+    water_context: str | None = None,
+) -> str:
     from jarvis.router import complete
 
     from jarvis.config import config
@@ -56,10 +96,12 @@ async def generate(ha_state_summary: str, anomalies: list[str] | None = None) ->
     anomaly_block = ""
     if anomalies:
         anomaly_block = "\n\nAnomalies detected (vs typical):\n" + "\n".join(f"- {a}" for a in anomalies)
+    water_block = f"\n\n{water_context}" if water_context else ""
     user_msg = (
         f"Morning briefing request — {now}\n\n"
         f"Current home state:\n{ha_state_summary}"
         f"{anomaly_block}"
+        f"{water_block}"
     )
 
     try:
