@@ -156,12 +156,99 @@ async def test_set_caravan_heating_enables_each_entity_by_domain():
 
     assert result["enabled"] is True
     calls = mock_ha.call_service.await_args_list
-    # Each control entity switched via its own domain, all turn_on. The physical heater
-    # switches are left untouched on enable — the thermostat automation decides when to fire.
-    assert {(c.args[0], c.args[1], c.args[2]["entity_id"]) for c in calls} == {
-        ("input_boolean", "turn_on", "input_boolean.caravan_heater_enabled"),
-        ("automation", "turn_on", "automation.warm_caravan_on_cold_workdays"),
+    # Each control entity switched on via its own domain. The physical heater switches are
+    # left untouched on enable — the thermostat automation decides when to fire them.
+    turn_ons = {(c.args[0], c.args[2]["entity_id"]) for c in calls if c.args[1] == "turn_on"}
+    assert turn_ons == {
+        ("input_boolean", "input_boolean.caravan_heater_enabled"),
+        ("automation", "automation.warm_caravan_on_cold_workdays"),
     }
+
+
+async def test_enabling_caravan_triggers_heat_immediately_by_default():
+    """Enabling fires the auto-heat automation now (trigger_now defaults True) so heat
+    starts on the next heartbeat instead of waiting, and the user isn't relying on the
+    automation re-evaluating on its own."""
+    from jarvis.agents.conversation import ConversationAgent
+    from jarvis.ha_client import HAClient
+    from jarvis.config import config
+
+    config.CARAVAN_ENTITIES = [
+        "input_boolean.caravan_heater_enabled", "automation.warm_caravan_on_cold_workdays",
+    ]
+    config.CARAVAN_HEATER_SWITCHES = []
+    mock_ha = MagicMock(spec=HAClient)
+    mock_ha.call_service = AsyncMock(return_value=[])
+    agent = ConversationAgent(mock_ha)  # no send_fn → no async verification task
+
+    await agent._execute_tool("set_caravan_heating", {"enabled": True})
+
+    triggers = [c for c in mock_ha.call_service.await_args_list if c.args[1] == "trigger"]
+    assert len(triggers) == 1
+    assert triggers[0].args[2]["entity_id"] == "automation.warm_caravan_on_cold_workdays"
+
+
+async def test_enabling_caravan_arms_power_verification(monkeypatch):
+    """After enabling, the agent schedules a delayed power-draw verification so a silent
+    failure (toggle didn't take / heaters not drawing) gets caught and self-healed."""
+    import asyncio
+    from jarvis.agents.conversation import ConversationAgent
+    from jarvis.ha_client import HAClient
+    from jarvis.config import config
+
+    config.CARAVAN_ENTITIES = ["input_boolean.caravan_heater_enabled"]
+    config.CARAVAN_HEATER_SWITCHES = []
+    config.CARAVAN_VERIFY_DELAY_MIN = 0  # run effectively immediately in the test
+    mock_ha = MagicMock(spec=HAClient)
+    mock_ha.call_service = AsyncMock(return_value=[])
+
+    called = asyncio.Event()
+
+    async def fake_verify(ha_client, send_fn):
+        called.set()
+        return {"ok": True}
+
+    monkeypatch.setattr("jarvis.caravan.verify_drawing", fake_verify)
+    agent = ConversationAgent(mock_ha, send_fn=AsyncMock())
+
+    await agent._execute_tool("set_caravan_heating", {"enabled": True})
+    await asyncio.wait_for(called.wait(), timeout=2)
+    assert called.is_set()
+
+
+def test_operational_prompt_forbids_claiming_untaken_caravan_action():
+    """Root cause of the cold caravan: the model SAID 'heating enabled' but never called
+    the tool. The prompt must forbid claiming a caravan action without actually calling
+    set_caravan_heating in the same turn."""
+    from jarvis.agents.conversation import _operational_layer
+    p = _operational_layer().lower()
+    assert "actually called set_caravan_heating" in p
+
+
+async def test_disabling_caravan_does_not_arm_verification(monkeypatch):
+    """Disabling must not schedule a power-draw check — there's nothing to verify."""
+    import asyncio
+    from jarvis.agents.conversation import ConversationAgent
+    from jarvis.ha_client import HAClient
+    from jarvis.config import config
+
+    config.CARAVAN_ENTITIES = ["input_boolean.caravan_heater_enabled"]
+    config.CARAVAN_HEATER_SWITCHES = []
+    mock_ha = MagicMock(spec=HAClient)
+    mock_ha.call_service = AsyncMock(return_value=[])
+
+    verify_calls = []
+
+    async def fake_verify(ha_client, send_fn):
+        verify_calls.append(True)
+        return {"ok": True}
+
+    monkeypatch.setattr("jarvis.caravan.verify_drawing", fake_verify)
+    agent = ConversationAgent(mock_ha, send_fn=AsyncMock())
+
+    await agent._execute_tool("set_caravan_heating", {"enabled": False})
+    await asyncio.sleep(0.05)
+    assert verify_calls == []
 
 
 async def test_set_caravan_heating_disables_and_can_trigger():

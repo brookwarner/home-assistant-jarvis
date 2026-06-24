@@ -291,7 +291,8 @@ TOOLS = [
                 "morning briefing's caravan question), and enabled=false when they won't be — or "
                 "when they say they're done/finished in the caravan. Disabling also switches the "
                 "physical heater plugs off immediately, so any running heaters actually stop. "
-                "Optionally trigger the auto-heat right away."
+                "Enabling fires the auto-heat now and arms a power-draw check that self-heals and "
+                "alerts if the caravan isn't actually heating a few minutes later."
             ),
             "parameters": {
                 "type": "object",
@@ -302,7 +303,7 @@ TOOLS = [
                     },
                     "trigger_now": {
                         "type": "boolean",
-                        "description": "Also run the auto-heat automation immediately after enabling (default false)",
+                        "description": "Run the auto-heat automation immediately after enabling (default true; you normally never need to set this)",
                     },
                 },
                 "required": ["enabled"],
@@ -525,8 +526,11 @@ def _operational_layer() -> str:
         "toggle, the auto-heat automation and its heartbeats; if they say they won't, call "
         "set_caravan_heating(enabled=false). Also call set_caravan_heating(enabled=false) whenever the "
         "user says they're done or finished in the caravan — that switches the physical heater plugs off "
-        "now, not just the automation. Use trigger_now=true only if they want heating to start "
-        "immediately. If the user never answers, a safety net forces the auto-heat off mid-morning.\n\n"
+        "now, not just the automation. Enabling already fires the heat immediately and arms a power-draw "
+        "check, so you do not need trigger_now. CRITICAL: never tell the user you have enabled or disabled "
+        "the caravan heating unless you actually called set_caravan_heating in this turn — a confirmation "
+        "you didn't back with the tool call is a lie that leaves them with a cold caravan. If the user "
+        "never answers, a safety net forces the auto-heat off mid-morning.\n\n"
         "TELEGRAM TOOLS:\n"
         "send_message — pushes a message to the user immediately, mid-turn. Use to acknowledge long tasks "
         "('On it, querying energy data...') or to deliver the actual answer for a complex request. "
@@ -649,6 +653,7 @@ class ConversationAgent:
         self._pending_reply: asyncio.Future | None = None
         self._agent_busy = False
         self._recent_alerts: deque[str] = deque(maxlen=8)
+        self._caravan_verify_task: asyncio.Task | None = None
 
     def _record_sent(self, text: str) -> None:
         """Remember a full (untruncated) message we just sent, for dedup on later polls."""
@@ -872,14 +877,31 @@ class ConversationAgent:
         log_completion(response, "opus")
         return {"opus_result": response.choices[0].message.content or "Done."}
 
-    async def _set_caravan_heating(self, enabled: bool, trigger_now: bool = False) -> dict:
+    async def _set_caravan_heating(self, enabled: bool, trigger_now: bool = True) -> dict:
         """Turn the configured caravan entities (master toggle + auto-heat automation +
         heartbeats) on or off. Records the decision so the 09:00 safety net won't override
-        it. Optionally fires the auto-heat automation now so heating starts immediately."""
+        it. When enabling, fires the auto-heat now (trigger_now defaults True) and arms a
+        delayed power-draw verification that self-heals if the caravan isn't actually
+        heating — so a silent failure can't leave the user with a cold caravan."""
         from jarvis import caravan
         result = await caravan.set_caravan(self._ha, enabled, trigger_now)
         caravan.mark_decided()
+        if enabled and self._send_fn:
+            self._caravan_verify_task = asyncio.create_task(self._verify_caravan_draw_later())
         return result
+
+    async def _verify_caravan_draw_later(self) -> None:
+        """Wait CARAVAN_VERIFY_DELAY_MIN, then confirm the caravan is actually drawing
+        power; self-heal and notify if not. Best-effort — never raises into the loop."""
+        from jarvis import caravan
+        from jarvis.config import config
+        try:
+            await asyncio.sleep(max(0.0, config.CARAVAN_VERIFY_DELAY_MIN) * 60)
+            await caravan.verify_drawing(self._ha, self._send_fn)
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            logger.debug(f"caravan power-draw verification failed: {e}")
 
     async def _ask_user_impl(self, prompt: str, timeout: int) -> dict:
         """Send prompt to user and block until they reply or timeout."""
@@ -930,7 +952,7 @@ class ConversationAgent:
                 return {"status": "ok", "mode": mode}
             elif name == "set_caravan_heating":
                 return await self._set_caravan_heating(
-                    bool(inputs.get("enabled")), bool(inputs.get("trigger_now", False))
+                    bool(inputs.get("enabled")), bool(inputs.get("trigger_now", True))
                 )
             elif name == "check_anomalies":
                 from jarvis.anomaly import detect_and_surface

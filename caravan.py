@@ -52,6 +52,72 @@ def _domain(eid: str) -> str:
     return eid.split(".")[0] if "." in eid else ""
 
 
+async def _read_float(ha_client: Any, entity_id: str) -> float | None:
+    """Numeric state of an entity, or None if missing/unavailable/non-numeric."""
+    if not entity_id:
+        return None
+    try:
+        state = await ha_client.get_state(entity_id)
+        return float((state or {}).get("state"))
+    except Exception:
+        return None
+
+
+async def verify_drawing(ha_client: Any, send_fn: Any) -> dict:
+    """Post-enable safety check: confirm the caravan is actually heating.
+
+    Runs a few minutes after heating is enabled. Three outcomes:
+      - master toggle never took (still off) -> re-enable + trigger, tell the user;
+      - enabled, cold, but the heaters draw ~nothing -> switch the plugs on directly
+        and warn (covers a dead plug or an automation that didn't fire);
+      - enabled and drawing watts, or warm enough to be idle -> stay silent.
+
+    This closes the gap where heating was reported "enabled" but the caravan stayed
+    cold, which the HA-side power-draw validation can't catch (it only fires once a
+    plug is already commanded on)."""
+    from jarvis.config import config
+
+    enable_eid = config.CARAVAN_ENTITIES[0] if config.CARAVAN_ENTITIES else None
+    enabled = False
+    if enable_eid:
+        st = await ha_client.get_state(enable_eid)
+        enabled = ((st or {}).get("state") or "").strip().lower() == "on"
+
+    if not enabled:
+        # The enable never stuck — re-run it for real so the caravan actually heats.
+        await set_caravan(ha_client, enabled=True, trigger_now=True)
+        await send_fn(
+            "Heads up — I went to turn the caravan heat on but the toggle didn't "
+            "stick the first time. I've switched it back on and kicked the heater off now."
+        )
+        return {"ok": False, "healed": True, "reason": "enable_did_not_stick"}
+
+    temp = await _read_float(ha_client, config.CARAVAN_TEMP_SENSOR)
+    watts = 0.0
+    for sid in config.CARAVAN_POWER_SENSORS:
+        watts += (await _read_float(ha_client, sid)) or 0.0
+
+    drawing = watts >= config.CARAVAN_MIN_HEATER_WATTS
+    cold = temp is not None and temp < config.CARAVAN_COMFORT_FLOOR_C
+
+    if cold and not drawing:
+        # Enabled and cold, but no power — switch the physical plugs on directly.
+        for eid in config.CARAVAN_HEATER_SWITCHES:
+            dom = _domain(eid) or "homeassistant"
+            try:
+                await ha_client.call_service(dom, "turn_on", {"entity_id": eid})
+            except Exception as e:
+                logger.debug(f"verify_drawing: turn_on {eid} failed: {e}")
+        temp_s = f"{temp:g}°C" if temp is not None else "a low temperature"
+        await send_fn(
+            f"Caravan heat is on but the heaters were drawing no power at {temp_s} — "
+            "I've switched the plugs on directly. Worth checking they're powered and on."
+        )
+        return {"ok": False, "healed": True, "reason": "no_draw", "temp": temp, "watts": watts}
+
+    return {"ok": True, "healed": False, "enabled": enabled, "temp": temp, "watts": watts}
+
+
 async def set_caravan(ha_client: Any, enabled: bool, trigger_now: bool = False) -> dict:
     """Switch every configured caravan entity on or off using its own domain
     (input_boolean.turn_on, automation.turn_off, switch.turn_on, ...). When enabling with

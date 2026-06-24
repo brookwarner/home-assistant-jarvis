@@ -77,5 +77,28 @@ class Config:
     # Safety net: if no explicit caravan decision is made by this local hour, the
     # auto-heat is forced off so an unused caravan never heats. 0-23; set via add-on.
     CARAVAN_SAFETY_HOUR: int = int(os.environ.get("CARAVAN_SAFETY_HOUR", "9"))
+    # Post-enable power-draw verification. A few minutes after caravan heating is enabled,
+    # Jarvis confirms the heaters are actually pulling watts. If the master toggle never
+    # took, or the caravan is cold but drawing nothing, it self-heals (re-enable / switch
+    # the plugs on directly) and tells the user — closing the gap where heating was
+    # "enabled" in chat but the caravan stayed cold.
+    CARAVAN_TEMP_SENSOR: str = os.environ.get(
+        "CARAVAN_TEMP_SENSOR", "sensor.ths_caravan_temperature"
+    )
+    CARAVAN_POWER_SENSORS: list[str] = [
+        s.strip()
+        for s in os.environ.get(
+            "CARAVAN_POWER_SENSORS",
+            "sensor.zigbee_plug_1_office_power,sensor.tz3000_typdpbpg_ts011f_power_2",
+        ).split(",")
+        if s.strip()
+    ]
+    CARAVAN_MIN_HEATER_WATTS: float = float(os.environ.get("CARAVAN_MIN_HEATER_WATTS", "5"))
+    # Only treat "no draw" as a fault when the caravan is below this temperature; above it
+    # the heaters are legitimately idle, so staying silent avoids false alarms.
+    CARAVAN_COMFORT_FLOOR_C: float = float(os.environ.get("CARAVAN_COMFORT_FLOOR_C", "16"))
+    # Minutes to wait after enabling before the power-draw check runs (the thermostat
+    # heartbeat fires every ~2 min, so give it a couple of cycles to actually switch on).
+    CARAVAN_VERIFY_DELAY_MIN: float = float(os.environ.get("CARAVAN_VERIFY_DELAY_MIN", "5"))
 
 config = Config()
