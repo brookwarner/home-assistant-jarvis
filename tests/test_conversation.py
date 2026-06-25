@@ -411,6 +411,45 @@ async def test_run_proactive_suppresses_silent():
     send_fn.assert_not_awaited()
 
 
+async def test_run_proactive_strips_reasoning_before_notify():
+    """On the notify path, the model's deliberation before NOTIFY: must not reach the user —
+    only the clean message after the marker is sent."""
+    from jarvis.agents.conversation import ConversationAgent
+
+    send_fn = AsyncMock()
+    agent = ConversationAgent(MagicMock(), send_fn=send_fn)
+
+    mock_choice = MagicMock()
+    mock_choice.finish_reason = "stop"
+    mock_choice.message.content = (
+        "I need to assess whether this warrants interrupting the user. "
+        "The spa thermostat is one of two open issues.\n"
+        "NOTIFY:\n"
+        "The spa thermostat (ITC-308-WIFI) has dropped off WiFi and is unavailable."
+    )
+    mock_choice.message.tool_calls = None
+    mock_response = MagicMock()
+    mock_response.choices = [mock_choice]
+
+    with patch("litellm.acompletion", new_callable=AsyncMock, return_value=mock_response):
+        await agent.run_proactive("itc_308: online -> unavailable", chat_id=123)
+
+    send_fn.assert_awaited_once_with(
+        "The spa thermostat (ITC-308-WIFI) has dropped off WiFi and is unavailable."
+    )
+
+
+def test_finalize_proactive_paths():
+    """_finalize_proactive: SILENT and empty -> None; NOTIFY: -> clean message; bare -> as-is."""
+    from jarvis.agents import conversation as c
+
+    assert c._finalize_proactive("SILENT") is None
+    assert c._finalize_proactive("reasoning\nNOTIFY:") is None  # empty message -> silent
+    assert c._finalize_proactive("why I'll speak\nNOTIFY:\nHi there") == "Hi there"
+    assert c._finalize_proactive("NOTIFY: inline message") == "inline message"
+    assert c._finalize_proactive("plain text, no marker") == "plain text, no marker"
+
+
 async def test_agent_busy_flag_set_during_reply():
     """_agent_busy is True while reply is running, False after."""
     from jarvis.agents.conversation import ConversationAgent

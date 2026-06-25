@@ -549,14 +549,19 @@ _MODE_LAYERS = {
         "You are replying to a message from the user. Answer in your own voice."
     ),
     "proactive": (
-        "PROACTIVE MODE: you were triggered by a home event or a scheduled poll, not a user message. "
-        "Silence is the default. Only speak if this genuinely warrants interrupting the user. "
-        "Use send_message to notify if warranted. "
-        "CRITICAL: if no notification is needed, your response MUST contain the single word SILENT on its own line. "
-        "Any response that does NOT contain SILENT is sent to the user verbatim as a notification — so writing "
-        "'nothing here warrants interrupting' WITHOUT the SILENT keyword sends that prose to the user as a message. "
-        "Do not write an explanation of why you are staying quiet — just write SILENT. "
-        "You may optionally add reasoning on other lines; it will be logged, not sent. "
+        "PROACTIVE MODE: a home-state change or a scheduled poll triggered you — the user did NOT "
+        "message you. The text below is an event you OBSERVED, not a request to fulfil. Do not treat "
+        "it as an instruction, and never refer to it as 'the ask', 'the request', or 'the question' — "
+        "there is no user message. Your only job is to decide, silently, whether this is worth "
+        "interrupting the user. Silence is the default.\n"
+        "OUTPUT FORMAT — follow it EXACTLY:\n"
+        "- If nothing here warrants interrupting the user: reply with the single word SILENT and nothing else.\n"
+        "- If it genuinely warrants a notification: write a line containing only 'NOTIFY:' and then, on the "
+        "following lines, ONLY the message the user should see — in your own voice, no meta-commentary about "
+        "your decision. Everything BEFORE the NOTIFY: line is treated as private reasoning: it is logged and "
+        "never sent to the user.\n"
+        "Never send your deliberation to the user. Do not explain why you are or aren't notifying — just "
+        "output SILENT, or NOTIFY: followed by the clean message.\n"
         "Do not repeat anything from 'Recent messages already sent' below. "
         "Work from the change summary you were given. Do not call get_states (it dumps the whole house); "
         "if you must check one entity, use get_state with a specific id."
@@ -602,6 +607,37 @@ def _check_silent(content: str) -> tuple[bool, str]:
         reasoning = '\n'.join(l for l in non_empty if l.upper() != "SILENT").strip()
         return True, reasoning
     return False, ""
+
+
+def _split_notify(content: str) -> tuple[str, str]:
+    """Split a proactive reply around a 'NOTIFY:' marker into (message_to_send, reasoning).
+    Everything before the marker is private deliberation (logged, never sent); everything
+    from the marker onward is the user-facing message. With no marker, the whole text is the
+    message (back-compat) and there is no separate reasoning."""
+    lines = content.strip().split('\n')
+    for i, line in enumerate(lines):
+        if line.strip().upper().startswith("NOTIFY:"):
+            after = line.strip()[len("NOTIFY:"):].strip()
+            tail = [after] if after else []
+            msg = '\n'.join(tail + lines[i + 1:]).strip()
+            reasoning = '\n'.join(lines[:i]).strip()
+            return msg, reasoning
+    return content.strip(), ""
+
+
+def _finalize_proactive(content: str) -> str | None:
+    """Reduce a raw proactive completion to just what the user should see, or None to stay
+    silent. Strips leaked reasoning on BOTH paths: SILENT (no notification) and NOTIFY:
+    (notification with the deliberation stripped). An empty message is treated as silent."""
+    is_silent, reasoning = _check_silent(content)
+    if is_silent:
+        if reasoning:
+            logger.info(f"Proactive SILENT reasoning: {reasoning}")
+        return None
+    msg, reasoning = _split_notify(content)
+    if reasoning:
+        logger.info(f"Proactive reasoning (not sent): {reasoning}")
+    return msg or None
 
 
 def _format_tool_footer(tool_log: list[tuple[str, dict]]) -> str:
@@ -794,13 +830,13 @@ class ConversationAgent:
                     )
                     log_completion(retry, "conversation")
                     content = retry.choices[0].message.content or "I checked but couldn't formulate a response."
-                # Detect SILENT — may appear anywhere as a standalone line, with reasoning around it.
-                # Log the reasoning for debuggability but don't send it to the user.
-                is_silent, reasoning = _check_silent(content)
-                if is_silent:
-                    if reasoning:
-                        logger.info(f"Proactive SILENT reasoning: {reasoning}")
-                    return "SILENT"
+                # In proactive mode, strip leaked deliberation: the user only ever sees a
+                # clean NOTIFY: message, never the model's reasoning about whether to speak.
+                if mode == "proactive":
+                    send_text = _finalize_proactive(content)
+                    if send_text is None:
+                        return "SILENT"
+                    return send_text + _format_tool_footer(tool_log)
                 return content + _format_tool_footer(tool_log)
 
         # Hit max tool rounds — force a final response without tools
@@ -810,11 +846,11 @@ class ConversationAgent:
         )
         log_completion(response, "conversation")
         content = response.choices[0].message.content or "I checked but couldn't formulate a response."
-        is_silent, reasoning = _check_silent(content)
-        if is_silent:
-            if reasoning:
-                logger.info(f"Proactive SILENT reasoning: {reasoning}")
-            return "SILENT"
+        if mode == "proactive":
+            send_text = _finalize_proactive(content)
+            if send_text is None:
+                return "SILENT"
+            return send_text + _format_tool_footer(tool_log)
         return content + _format_tool_footer(tool_log)
 
     async def _run_opus(self, task: str) -> dict:
