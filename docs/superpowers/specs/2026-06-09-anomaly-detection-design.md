@@ -37,6 +37,27 @@ Minimise edits to hot shared files. New logic in a **new module `anomaly.py`**. 
 
 `Anomaly` is a small dataclass/dict: `statistic_id, name, unit, yesterday, median, z, pct, severity, descriptor`.
 
+## Habituation (added 2026-06)
+
+A persistent deviation re-scores above threshold every day (the robust median moves
+slowly), so without memory the briefing re-headlines the same standing story — e.g. water —
+morning after morning. `detect_and_surface` now keeps a small per-statistic memory
+(`anomaly_state.json`, path via `ANOMALY_STATE_PATH`, gitignored):
+
+- An anomaly surfaces during a grace window of `ANOMALY_HABITUATE_DAYS` (default 3)
+  consecutive flagged days, then is suppressed as "the new normal".
+- It re-surfaces only on **material worsening** vs. the level last spoken at:
+  `abs(z)` rose by `ANOMALY_REESCALATE_Z` (default 2.0), the value moved a further
+  `ANOMALY_REESCALATE_PCT` (default 0.5) in the same direction, or the deviation reversed
+  direction. Re-escalation re-anchors.
+- A one-day quiet gap breaks the run, so a recurrence is fresh news again. Untouched
+  memory is forgotten after `ANOMALY_FORGET_DAYS` (default 45).
+
+`filter_habituated(anomalies, state) -> (kept, new_state)` is pure; `detect_and_surface`
+loads/saves the state file around it. The morning-briefing job also drops the Watercare
+grounding block on days no water anomaly survives, so a habituated water deviation stops
+pulling a daily water paragraph.
+
 ## Integration footprint
 
 - **New:** `anomaly.py`, `tests/test_anomaly.py`.

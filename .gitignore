@@ -10,6 +10,8 @@ ha_entities.md
 jarvis.log
 jarvis.pid
 nohup.out
+anomaly_state.json
+user_alerts.json
 
 # Python
 __pycache__/
