@@ -304,6 +304,11 @@ async def run_morning_briefing(
     summary = ha_client.get_state_summary(states, domains=WATCHED_DOMAINS)
     anomalies = await detect_and_surface(ha_client)  # [] on any failure
     water_context = await fetch_water_context(ha_client)  # None on any failure
+    # Only ground the briefing in Watercare figures on a day water is actually newsworthy.
+    # Once a standing water deviation has habituated out of the anomaly list, drop the water
+    # block too — otherwise Jarvis keeps getting handed the figures and keeps leading with them.
+    if water_context and not any("water" in a.lower() for a in anomalies):
+        water_context = None
     text = await generate(summary, anomalies=anomalies, water_context=water_context)
     if config.CARAVAN_PROMPT_ENABLED:
         from jarvis import caravan

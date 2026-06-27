@@ -121,3 +121,76 @@ async def test_detect_and_surface_graceful_on_failure():
     ha = MagicMock()
     ha.list_statistic_ids = AsyncMock(side_effect=Exception("db locked"))
     assert await anomaly.detect_and_surface(ha) == []
+
+
+# --- Habituation: stop re-headlining a standing deviation day after day ---------------
+
+def _anom(sid, day, z, value, sev="medium"):
+    from jarvis.anomaly import Anomaly
+    return Anomaly(sid, sid, "L", value, 100.0, z, 1.0, sev, "d", date=f"2025-03-{day:02d}")
+
+
+def test_habituation_suppresses_after_grace_window(monkeypatch):
+    """A persistent deviation surfaces during the grace window, then becomes 'the new
+    normal' and is suppressed — this is the fix for Jarvis going on about water daily."""
+    from jarvis import anomaly
+    monkeypatch.setattr(anomaly, "ANOMALY_HABITUATE_DAYS", 3)
+    state: dict = {}
+    surfaced = []
+    for day in range(1, 8):  # seven consecutive days of the same ~950L water spike
+        kept, state = anomaly.filter_habituated([_anom("sensor.water_daily", day, 8.0, 950)], state)
+        surfaced.append(bool(kept))
+    # Days 1-3 are news; days 4-7 are suppressed (the new normal).
+    assert surfaced == [True, True, True, False, False, False, False]
+
+
+def test_habituation_reescalates_when_materially_worse(monkeypatch):
+    from jarvis import anomaly
+    monkeypatch.setattr(anomaly, "ANOMALY_HABITUATE_DAYS", 3)
+    monkeypatch.setattr(anomaly, "ANOMALY_REESCALATE_PCT", 0.5)
+    state: dict = {}
+    for day in range(1, 5):  # days 1-3 news, day 4 habituated (still ~950L)
+        kept, state = anomaly.filter_habituated([_anom("sensor.water_daily", day, 8.0, 950)], state)
+    assert kept == []  # day 4 suppressed
+    # Day 5: usage jumps from 950 to 1500 (+58%) — a real worsening, speak up again.
+    kept, state = anomaly.filter_habituated([_anom("sensor.water_daily", 5, 12.0, 1500)], state)
+    assert len(kept) == 1
+
+
+def test_habituation_fresh_again_after_quiet_gap(monkeypatch):
+    from jarvis import anomaly
+    monkeypatch.setattr(anomaly, "ANOMALY_HABITUATE_DAYS", 3)
+    state: dict = {}
+    for day in range(1, 5):  # habituated by day 4
+        kept, state = anomaly.filter_habituated([_anom("sensor.water_daily", day, 8.0, 950)], state)
+    assert kept == []
+    # Day 5 the metric is normal (not flagged) — its memory is carried forward but quiet.
+    kept, state = anomaly.filter_habituated([], state)
+    assert "sensor.water_daily" in state
+    # Day 6 it spikes again: the run was broken, so it's fresh news.
+    kept, state = anomaly.filter_habituated([_anom("sensor.water_daily", 6, 8.0, 950)], state)
+    assert len(kept) == 1
+
+
+async def test_detect_and_surface_persists_and_habituates(tmp_path):
+    """End-to-end: the same spike on two consecutive days surfaces once, then habituates,
+    with state persisted to disk between calls."""
+    from jarvis import anomaly
+    state_file = tmp_path / "anomaly_state.json"
+
+    def ha_for(day):
+        ha = MagicMock()
+        ha.list_statistic_ids = AsyncMock(return_value=["sensor.water_daily"])
+        # 16 baseline days at ~100, then a run of 300 ending on the given day.
+        run_len = day
+        daily = _daily(_BASE + [300] * run_len, start="2025-02-01")
+        ha.get_statistics = AsyncMock(return_value={"sensor.water_daily": {"daily": daily, "unit": "L"}})
+        return ha
+
+    # ANOMALY_HABITUATE_DAYS default is 3, so the 4th consecutive flagged day suppresses.
+    seen = []
+    for day in range(1, 6):
+        descs = await anomaly.detect_and_surface(ha_for(day), state_path=str(state_file))
+        seen.append(bool(descs))
+    assert state_file.exists()
+    assert seen[0] is True and seen[-1] is False
