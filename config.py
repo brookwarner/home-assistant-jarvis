@@ -58,7 +58,7 @@ class Config:
         s.strip()
         for s in os.environ.get(
             "CARAVAN_ENTITIES",
-            "input_boolean.caravan_heater_enabled,automation.warm_caravan_on_cold_workdays",
+            "input_boolean.caravan_heater_enabled,automation.warm_caravan_2_minute_heartbeat",
         ).split(",")
         if s.strip()
     ]
