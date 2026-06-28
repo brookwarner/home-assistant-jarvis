@@ -197,6 +197,31 @@ async def main() -> None:
             return  # proactive heartbeat turned off in the add-on Configuration screen
         recent = list(agent._recent_alerts)
         context_parts = [f"Home state changes since last poll:\n{diff_text}"]
+        # When the caravan temperature is what moved, the agent has no way to know whether
+        # heating is *meant* to be on. A falling caravan temp while heating is OFF is the
+        # expected result of the caravan being unused — not a fault. Hand the agent that
+        # fact so it doesn't confabulate a "missing entity" / "broken automation" alarm.
+        caravan_temp_sensor = (config.CARAVAN_TEMP_SENSOR or "").strip()
+        if caravan_temp_sensor and caravan_temp_sensor in diff_text:
+            enable_eid = config.CARAVAN_ENTITIES[0] if config.CARAVAN_ENTITIES else ""
+            try:
+                st = await ha.get_state(enable_eid) if enable_eid else None
+                heating_on = ((st or {}).get("state") or "").strip().lower() == "on"
+            except Exception:
+                heating_on = None  # couldn't read — say so rather than guess
+            if heating_on is False:
+                context_parts.append(
+                    "Caravan context: caravan auto-heating is currently OFF "
+                    f"({enable_eid} = off), so the caravan is intentionally unheated and a "
+                    "falling caravan temperature is the normal, expected consequence — NOT a "
+                    "fault, a missing entity, or a broken automation. Stay SILENT about the "
+                    "caravan unless the user has asked for heat."
+                )
+            elif heating_on is True:
+                context_parts.append(
+                    f"Caravan context: caravan auto-heating is ON ({enable_eid} = on). If the "
+                    "temperature is climbing or steady, that is heating working normally."
+                )
         if recent:
             context_parts.append(
                 "Recent messages already sent (do NOT repeat their content):\n"

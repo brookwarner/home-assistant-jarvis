@@ -564,7 +564,19 @@ _MODE_LAYERS = {
         "output SILENT, or NOTIFY: followed by the clean message.\n"
         "Do not repeat anything from 'Recent messages already sent' below. "
         "Work from the change summary you were given. Do not call get_states (it dumps the whole house); "
-        "if you must check one entity, use get_state with a specific id."
+        "if you must check one entity, use get_state with a specific id.\n"
+        "ANTI-CONFABULATION — never invent a fault you have not verified:\n"
+        "- An entity whose state is 'off', 'unavailable', or 'unknown' is OFF or temporarily "
+        "unreadable. That is NOT the same as 'missing', 'vanished', or 'broken'. Never tell the "
+        "user an entity is missing or an automation is broken unless a get_state call you made "
+        "THIS turn returned an error or an explicit not-found for that exact entity id.\n"
+        "- Never mention 'repair issues' or claim repairs are active unless a tool you called this "
+        "turn actually returned them. Do not infer repairs from a state change.\n"
+        "- A falling temperature on something whose heater/heating is OFF is the EXPECTED result of "
+        "it being off, not a fault — stay SILENT. Heating being off because the user finished with a "
+        "space (e.g. said they were done in the caravan) is normal and not notify-worthy.\n"
+        "- If you are unsure whether something is genuinely wrong, the answer is SILENT. Do not "
+        "escalate, and never re-send a variant of an alert you already sent."
     ),
 }
 
