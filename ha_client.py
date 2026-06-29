@@ -204,13 +204,25 @@ class HAClient:
         all_states = await self.get_states()
         return [s for s in all_states if s["entity_id"].startswith(f"{domain}.")]
 
-    def get_state_summary(self, states: list[dict], domains: list[str] | None = None) -> str:
-        """Return a compact text summary of states for LLM context."""
+    def get_state_summary(
+        self,
+        states: list[dict],
+        domains: list[str] | None = None,
+        exclude: "set[str] | list[str] | None" = None,
+    ) -> str:
+        """Return a compact text summary of states for LLM context.
+
+        `exclude` is a set/list of entity_ids to omit entirely — used by the briefing to
+        keep stale or dubious sensors (e.g. the hardcoded 'NZ average' water comparison)
+        out of the model's context so it can't headline them."""
+        excluded = set(exclude or ())
         filtered = states
         if domains:
             filtered = [s for s in states if any(
                 s["entity_id"].startswith(f"{d}.") for d in domains
             )]
+        if excluded:
+            filtered = [s for s in filtered if s.get("entity_id") not in excluded]
         lines = []
         for s in filtered:
             unit = s.get("attributes", {}).get("unit_of_measurement", "")

@@ -104,5 +104,19 @@ class Config:
     # Watercare household_efficiency_band) are surfaced into the briefing so any water
     # mention is grounded in real figures rather than a confabulated 'NZ average'.
     WATERCARE_SENSOR: str = os.environ.get("WATERCARE_SENSOR", "sensor.watercare")
+    # Entities kept OUT of the morning-briefing state summary. Default drops
+    # sensor.water_usage_vs_average — a template that compares this home's monthly-derived
+    # daily figure to a HARDCODED 200 L/day "NZ Average" constant, yielding a fixed "174%".
+    # Because it's monthly-cadence data, that value sat frozen for days and the briefing
+    # re-headlined the same "174% above the NZ average" every morning. It is real sensor
+    # data (not confabulated), but a dubious, stale comparison we don't want leading.
+    BRIEFING_EXCLUDE_ENTITIES: list[str] = [
+        s.strip()
+        for s in os.environ.get(
+            "BRIEFING_EXCLUDE_ENTITIES",
+            "sensor.water_usage_vs_average",
+        ).split(",")
+        if s.strip()
+    ]
 
 config = Config()

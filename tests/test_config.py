@@ -75,6 +75,32 @@ def test_timezone_blank_by_default(monkeypatch):
     assert c.config.TIMEZONE == ""  # blank => follow HA at startup
 
 
+def test_briefing_excludes_nz_average_sensor_by_default(monkeypatch):
+    """The hardcoded 'Water Usage vs NZ Average' template sensor is excluded from the
+    briefing by default — it compares to a fixed 200 L/day constant and drove a stale,
+    repetitive '174%' headline morning after morning."""
+    for v in ("BRIEFING_EXCLUDE_ENTITIES",):
+        monkeypatch.delenv(v, raising=False)
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "t")
+    monkeypatch.setenv("TELEGRAM_CHAT_ID", "1")
+    monkeypatch.setenv("HA_TOKEN", "h")
+    import importlib
+    import jarvis.config as c
+    importlib.reload(c)
+    assert "sensor.water_usage_vs_average" in c.config.BRIEFING_EXCLUDE_ENTITIES
+
+
+def test_briefing_exclude_overridable_from_env(monkeypatch):
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "t")
+    monkeypatch.setenv("TELEGRAM_CHAT_ID", "1")
+    monkeypatch.setenv("HA_TOKEN", "h")
+    monkeypatch.setenv("BRIEFING_EXCLUDE_ENTITIES", "sensor.foo, sensor.bar")
+    import importlib
+    import jarvis.config as c
+    importlib.reload(c)
+    assert c.config.BRIEFING_EXCLUDE_ENTITIES == ["sensor.foo", "sensor.bar"]
+
+
 def test_quiet_window_defaults(monkeypatch):
     for k, v in {
         "TELEGRAM_BOT_TOKEN": "t", "TELEGRAM_CHAT_ID": "1", "HA_TOKEN": "h",

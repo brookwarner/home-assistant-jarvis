@@ -69,6 +69,33 @@ async def test_get_states_returns_list(mock_config):
     assert len(result) == 2
     assert result[0]["entity_id"] == "sensor.temp"
 
+async def test_get_state_summary_excludes_entities(mock_config):
+    """Entities in `exclude` are dropped from the summary so stale/dubious sensors
+    (e.g. the hardcoded 'Water Usage vs NZ Average' template) never reach the briefing."""
+    from jarvis.ha_client import HAClient
+    client = HAClient("http://localhost:8123", "ha_token")
+
+    states = [
+        {"entity_id": "sensor.lounge_temp", "state": "19", "attributes": {"unit_of_measurement": "°C"}},
+        {"entity_id": "sensor.water_usage_vs_average", "state": "174.0", "attributes": {"unit_of_measurement": "%"}},
+    ]
+
+    summary = client.get_state_summary(states, domains=["sensor"], exclude={"sensor.water_usage_vs_average"})
+
+    assert "sensor.lounge_temp" in summary
+    assert "water_usage_vs_average" not in summary
+    assert "174.0" not in summary
+
+
+async def test_get_state_summary_no_exclude_keeps_everything(mock_config):
+    """Default (no exclude) is unchanged — backward compatible."""
+    from jarvis.ha_client import HAClient
+    client = HAClient("http://localhost:8123", "ha_token")
+    states = [{"entity_id": "sensor.water_usage_vs_average", "state": "174.0", "attributes": {}}]
+    summary = client.get_state_summary(states, domains=["sensor"])
+    assert "water_usage_vs_average" in summary
+
+
 async def test_get_timezone_reads_ha_config(mock_config):
     from jarvis.ha_client import HAClient
     client = HAClient("http://localhost:8123", "ha_token")

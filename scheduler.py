@@ -301,7 +301,9 @@ async def run_morning_briefing(
     from jarvis.config import config
 
     states = await ha_client.get_states()
-    summary = ha_client.get_state_summary(states, domains=WATCHED_DOMAINS)
+    summary = ha_client.get_state_summary(
+        states, domains=WATCHED_DOMAINS, exclude=config.BRIEFING_EXCLUDE_ENTITIES
+    )
     anomalies = await detect_and_surface(ha_client)  # [] on any failure
     water_context = await fetch_water_context(ha_client)  # None on any failure
     # Only ground the briefing in Watercare figures on a day water is actually newsworthy.
