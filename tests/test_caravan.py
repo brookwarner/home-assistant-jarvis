@@ -28,7 +28,7 @@ def _ha(states):
 def _configure(config):
     config.CARAVAN_ENTITIES = [
         "input_boolean.caravan_heater_enabled",
-        "automation.warm_caravan_on_cold_workdays",
+        "automation.warm_caravan_2_minute_heartbeat",
     ]
     config.CARAVAN_HEATER_SWITCHES = ["switch.office_plug", "switch.caravan_plug"]
     config.CARAVAN_TEMP_SENSOR = "sensor.ths_caravan_temperature"

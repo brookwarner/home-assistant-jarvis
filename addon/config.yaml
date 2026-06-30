@@ -43,7 +43,7 @@ options:
   caravan_safety_hour: 9
   caravan_entities:
     - input_boolean.caravan_heater_enabled
-    - automation.warm_caravan_on_cold_workdays
+    - automation.warm_caravan_2_minute_heartbeat
   # Nested groups must be present even when all their fields are optional, or the
   # add-on fails validation ("Missing option 'models'"). Empty-dict defaults satisfy
   # that while keeping every field optional (blank -> falls back to .env).

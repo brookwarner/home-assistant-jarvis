@@ -145,7 +145,7 @@ async def test_set_caravan_heating_enables_each_entity_by_domain():
     from jarvis.config import config
 
     config.CARAVAN_ENTITIES = [
-        "input_boolean.caravan_heater_enabled", "automation.warm_caravan_on_cold_workdays",
+        "input_boolean.caravan_heater_enabled", "automation.warm_caravan_2_minute_heartbeat",
     ]
     config.CARAVAN_HEATER_SWITCHES = ["switch.oil_heater", "switch.fan_heater"]
     mock_ha = MagicMock(spec=HAClient)
@@ -161,7 +161,7 @@ async def test_set_caravan_heating_enables_each_entity_by_domain():
     turn_ons = {(c.args[0], c.args[2]["entity_id"]) for c in calls if c.args[1] == "turn_on"}
     assert turn_ons == {
         ("input_boolean", "input_boolean.caravan_heater_enabled"),
-        ("automation", "automation.warm_caravan_on_cold_workdays"),
+        ("automation", "automation.warm_caravan_2_minute_heartbeat"),
     }
 
 
@@ -174,7 +174,7 @@ async def test_enabling_caravan_triggers_heat_immediately_by_default():
     from jarvis.config import config
 
     config.CARAVAN_ENTITIES = [
-        "input_boolean.caravan_heater_enabled", "automation.warm_caravan_on_cold_workdays",
+        "input_boolean.caravan_heater_enabled", "automation.warm_caravan_2_minute_heartbeat",
     ]
     config.CARAVAN_HEATER_SWITCHES = []
     mock_ha = MagicMock(spec=HAClient)
@@ -185,7 +185,7 @@ async def test_enabling_caravan_triggers_heat_immediately_by_default():
 
     triggers = [c for c in mock_ha.call_service.await_args_list if c.args[1] == "trigger"]
     assert len(triggers) == 1
-    assert triggers[0].args[2]["entity_id"] == "automation.warm_caravan_on_cold_workdays"
+    assert triggers[0].args[2]["entity_id"] == "automation.warm_caravan_2_minute_heartbeat"
 
 
 async def test_enabling_caravan_arms_power_verification(monkeypatch):
@@ -291,7 +291,7 @@ async def test_set_caravan_heating_disables_and_can_trigger():
     from jarvis.config import config
 
     config.CARAVAN_ENTITIES = [
-        "input_boolean.caravan_heater_enabled", "automation.warm_caravan_on_cold_workdays",
+        "input_boolean.caravan_heater_enabled", "automation.warm_caravan_2_minute_heartbeat",
     ]
     config.CARAVAN_HEATER_SWITCHES = ["switch.oil_heater", "switch.fan_heater"]
     mock_ha = MagicMock(spec=HAClient)
@@ -309,7 +309,7 @@ async def test_set_caravan_heating_disables_and_can_trigger():
     on = await agent._execute_tool("set_caravan_heating", {"enabled": True, "trigger_now": True})
     triggers = [c for c in mock_ha.call_service.await_args_list if c.args[1] == "trigger"]
     assert len(triggers) == 1  # only the automation is triggered, not the input_boolean
-    assert triggers[0].args[2]["entity_id"] == "automation.warm_caravan_on_cold_workdays"
+    assert triggers[0].args[2]["entity_id"] == "automation.warm_caravan_2_minute_heartbeat"
     assert on["enabled"] is True
 
 
