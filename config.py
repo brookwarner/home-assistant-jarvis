@@ -104,17 +104,24 @@ class Config:
     # Watercare household_efficiency_band) are surfaced into the briefing so any water
     # mention is grounded in real figures rather than a confabulated 'NZ average'.
     WATERCARE_SENSOR: str = os.environ.get("WATERCARE_SENSOR", "sensor.watercare")
-    # Entities kept OUT of the morning-briefing state summary. Default drops
-    # sensor.water_usage_vs_average — a template that compares this home's monthly-derived
-    # daily figure to a HARDCODED 200 L/day "NZ Average" constant, yielding a fixed "174%".
-    # Because it's monthly-cadence data, that value sat frozen for days and the briefing
-    # re-headlined the same "174% above the NZ average" every morning. It is real sensor
-    # data (not confabulated), but a dubious, stale comparison we don't want leading.
+    # Entities kept OUT of the morning-briefing state summary. Defaults drop:
+    #  - sensor.water_usage_vs_average — a template that compares this home's monthly-derived
+    #    daily figure to a HARDCODED 200 L/day "NZ Average" constant, yielding a fixed "174%".
+    #    Because it's monthly-cadence data, that value sat frozen for days and the briefing
+    #    re-headlined the same "174% above the NZ average" every morning. It is real sensor
+    #    data (not confabulated), but a dubious, stale comparison we don't want leading.
+    #  - sensor.waitakereweathermetservice_temperature — the MetService regional station feed.
+    #    The state summary is a flat entity->value dump with no hint of which sensor is "the"
+    #    outdoor reading, so the model kept citing this regional feed (e.g. 1.3C on a still
+    #    winter morning) as the outdoor temperature, contradicting the local, canonical
+    #    sensor.ths_outdoors_temperature (8.3C) shown on the dashboard. Dropping it here
+    #    leaves the local outdoor sensor as the only outdoor air-temp source in context.
+    #    (The MetService UV-index entity is separate and stays.)
     BRIEFING_EXCLUDE_ENTITIES: list[str] = [
         s.strip()
         for s in os.environ.get(
             "BRIEFING_EXCLUDE_ENTITIES",
-            "sensor.water_usage_vs_average",
+            "sensor.water_usage_vs_average,sensor.waitakereweathermetservice_temperature",
         ).split(",")
         if s.strip()
     ]
