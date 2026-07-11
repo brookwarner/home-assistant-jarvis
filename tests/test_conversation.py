@@ -258,6 +258,20 @@ def test_operational_prompt_forbids_claiming_untaken_caravan_action():
     assert "actually called set_caravan_heating" in p
 
 
+def test_operational_prompt_records_confirmation_even_when_already_on():
+    """Second cold-caravan failure: the user answered 'yes, I've already turned it on', the
+    model skipped set_caravan_heating as a 'duplicate', so the decision was never recorded
+    and the 09:00 safety net switched the heat back off. The prompt must require the tool
+    call on ANY confirmation — including 'already on' — and explain it records the day's
+    answer so the safety net stands down."""
+    from jarvis.agents.conversation import _operational_layer
+    p = _operational_layer().lower()
+    assert "already turned the caravan heating on themselves" in p
+    assert "records their answer" in p
+    assert "idempotent" in p
+    assert "safety net" in p
+
+
 async def test_disabling_caravan_does_not_arm_verification(monkeypatch):
     """Disabling must not schedule a power-draw check — there's nothing to verify."""
     import asyncio
