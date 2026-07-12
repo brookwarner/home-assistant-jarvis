@@ -161,6 +161,25 @@ async def cmd_briefing(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         await update.message.reply_text(f"Briefing failed: {e}")
 
 
+async def cmd_cost(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Report LLM spend: this process's session, today, month-to-date, and all-time
+    (the latter three persist across restarts — see jarvis/usage.py)."""
+    if update.effective_chat.id != config.TELEGRAM_CHAT_ID:
+        return
+    from jarvis import usage
+
+    def _line(label: str, t: dict) -> str:
+        return f"{label}: {int(t['requests'])} calls, ${t['cost']:.4f} ({int(t['input_tokens'])} in / {int(t['output_tokens'])} out tok)"
+
+    lines = [
+        _line("Session", usage.session_totals()),
+        _line("Today", usage.today_totals()),
+        _line("This month", usage.month_to_date_totals()),
+        _line("All-time", usage.lifetime_totals()),
+    ]
+    await update.message.reply_text("\n".join(lines))
+
+
 _app_ref: list = [None]
 
 
@@ -185,6 +204,7 @@ async def main() -> None:
     agent = ConversationAgent(ha, send_fn=send_to_user)
 
     app.add_handler(CommandHandler("briefing", cmd_briefing))
+    app.add_handler(CommandHandler("cost", cmd_cost))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
     app.add_handler(MessageHandler(filters.VOICE, handle_voice))
 

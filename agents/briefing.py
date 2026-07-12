@@ -39,7 +39,13 @@ def _load_system_prompt() -> str:
         "usage. Do not invent a comparison you were not given. "
         "And don't re-headline the same standing deviation (e.g. water) morning after morning — if it has "
         "been flagged on recent days and hasn't materially changed, it's the new normal, not news; mention "
-        "it briefly at most, or skip it."
+        "it briefly at most, or skip it. "
+        "Do NOT ask whether the caravan will be used today, in any wording — a separate, fixed question "
+        "about the caravan is appended after you generate this text, so asking yourself would duplicate "
+        "it and the user would be asked twice. The 'Caravan auto-heat' note above describes how a REPLY "
+        "to that follow-up question is handled later in conversation — it is not an instruction for you "
+        "to raise the topic here. You may still mention the caravan's temperature as a plain fact if it's "
+        "notable, just never as a question about today's plans."
     )
     return base + briefing_note
 

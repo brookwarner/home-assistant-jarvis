@@ -255,6 +255,7 @@ Auto-created on first `remember` call.
 | Command | Description |
 |---|---|
 | `/briefing` | Trigger an immediate morning briefing |
+| `/cost` | Show LLM spend: this session, today, month-to-date, and all-time |
 | *(any message)* | Chat with Jarvis |
 | *(voice message)* | Transcribed and processed (requires Whisper) |
 
@@ -289,6 +290,8 @@ With the default model configuration (Haiku for triage/conversation/briefing/pro
 - **Opus sub-agent**: ~$0.05–0.20 per delegation (use sparingly)
 
 Running costs are billed to your Anthropic account directly (no OpenRouter markup) under the default config. Per-call costs are logged by the `jarvis.usage` logger so you can see exactly where the money goes instead of reading it off the provider dashboard. Switching the proactive model to `claude-sonnet-4-6` raises its quality but costs ~10x more per invocation.
+
+Cost is also tracked cumulatively — ask Jarvis `/cost` for this session's spend plus today/month-to-date/all-time totals. The latter three are persisted to `usage_state.json` (path overridable via `USAGE_STATE_PATH`) so they survive restarts, unlike the in-memory session total.
 
 ---
 

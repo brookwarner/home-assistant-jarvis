@@ -87,6 +87,19 @@ def test_briefing_prompt_includes_voice():
     assert "briefing" in p.lower()
 
 
+def test_briefing_prompt_forbids_asking_the_caravan_question():
+    """The scheduler appends a fixed caravan question after generate() returns (see
+    scheduler.CARAVAN_QUESTION). The shared system prompt also carries a note — reused from
+    conversation mode — that says 'the morning briefing asks whether the user will use the
+    caravan that day', which reads as a self-instruction when the model is the one WRITING
+    the briefing. Left unchecked, the model asks its own version of the question and the
+    user is asked twice. The briefing-mode addendum must explicitly forbid that."""
+    from jarvis.agents import briefing
+    p = briefing._load_system_prompt().lower()
+    assert "do not ask whether the caravan will be used today" in p
+    assert "asked twice" in p
+
+
 def test_briefing_prompt_forbids_invented_benchmarks_but_allows_real_ones():
     """Anomaly baselines are this home's OWN recent median, and the only real peer signal
     is Watercare's household_efficiency_band. The prompt must forbid inventing an external
