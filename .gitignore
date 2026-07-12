@@ -12,6 +12,7 @@ jarvis.pid
 nohup.out
 anomaly_state.json
 user_alerts.json
+usage_state.json
 
 # Python
 __pycache__/
