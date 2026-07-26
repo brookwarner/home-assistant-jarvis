@@ -534,3 +534,55 @@ def test_in_quiet_window_disabled_when_equal(monkeypatch):
     monkeypatch.setattr("jarvis.config.config.PROACTIVE_QUIET_END", 0)
     assert _in_quiet_window(0) is False
     assert _in_quiet_window(3) is False
+
+
+def test_watched_domains_includes_presence():
+    """person.* carries home/not_home/zone, which is what lets the briefing reason about the
+    household's day (empty house -> heating can idle). Without the domain in this list the
+    entities never reach the model. device_tracker is deliberately excluded — it's noisier
+    (battery monitors, stale iPads) and person aggregates it anyway."""
+    from jarvis.scheduler import WATCHED_DOMAINS
+    assert "person" in WATCHED_DOMAINS
+    assert "device_tracker" not in WATCHED_DOMAINS
+
+
+async def test_run_morning_briefing_passes_calendar_context_to_the_agent():
+    from jarvis import scheduler
+
+    captured = {}
+
+    async def fake_generate(summary, anomalies=None, water_context=None, calendar_context=None):
+        captured["calendar_context"] = calendar_context
+        return "Morning."
+
+    ha = MagicMock()
+    ha.get_states = AsyncMock(return_value=[{"entity_id": "calendar.work_2", "state": "on"}])
+    ha.get_state_summary = MagicMock(return_value="calendar.work_2: on")
+
+    with patch("jarvis.agents.briefing.generate", new=fake_generate), \
+         patch("jarvis.agents.briefing.fetch_water_context", new_callable=AsyncMock, return_value=None), \
+         patch("jarvis.agents.briefing.fetch_calendar_context", new_callable=AsyncMock,
+               return_value="Today's calendar: 09:30 Dentist."), \
+         patch("jarvis.anomaly.detect_and_surface", new_callable=AsyncMock, return_value=[]):
+        await scheduler.run_morning_briefing(ha, AsyncMock())
+
+    assert captured["calendar_context"] == "Today's calendar: 09:30 Dentist."
+
+
+async def test_run_morning_briefing_survives_calendar_failure():
+    """A calendar outage must degrade the briefing, not cancel it."""
+    from jarvis import scheduler
+
+    ha = MagicMock()
+    ha.get_states = AsyncMock(return_value=[])
+    ha.get_state_summary = MagicMock(return_value="sensor.x: 1")
+    sent = []
+
+    with patch("jarvis.agents.briefing.generate", new_callable=AsyncMock, return_value="Morning."), \
+         patch("jarvis.agents.briefing.fetch_water_context", new_callable=AsyncMock, return_value=None), \
+         patch("jarvis.agents.briefing.fetch_calendar_context", new_callable=AsyncMock,
+               side_effect=RuntimeError("HA down")), \
+         patch("jarvis.anomaly.detect_and_surface", new_callable=AsyncMock, return_value=[]):
+        await scheduler.run_morning_briefing(ha, AsyncMock(side_effect=lambda t: sent.append(t)))
+
+    assert sent and "Morning." in sent[0]

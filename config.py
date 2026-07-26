@@ -125,5 +125,30 @@ class Config:
         ).split(",")
         if s.strip()
     ]
+    # Calendars whose events are surfaced in the morning briefing. Blank (the default) means
+    # every calendar entity that is currently AVAILABLE — this home has ~75 calendar entities
+    # of which ~50 are stale duplicates left by a re-added integration, sitting at state
+    # 'unavailable' and returning HTTP 400 on the events endpoint. Filtering on state drops
+    # those automatically, so the default needs no hand-maintained list. Set explicitly to
+    # narrow it if the briefing gets noisy (e.g. "calendar.work_2,calendar.shared_2").
+    BRIEFING_CALENDARS: list[str] = [
+        s.strip() for s in os.environ.get("BRIEFING_CALENDARS", "").split(",") if s.strip()
+    ]
+    # Calendars dropped from the briefing even when available. Default drops:
+    #  - calendar.workday_sensor_calendar — a synthetic calendar that exists to drive a workday
+    #    binary_sensor. It emits an all-day "Workday Sensor" event most days, which is plumbing
+    #    showing up as a commitment.
+    BRIEFING_CALENDARS_EXCLUDE: list[str] = [
+        s.strip()
+        for s in os.environ.get(
+            "BRIEFING_CALENDARS_EXCLUDE", "calendar.workday_sensor_calendar"
+        ).split(",")
+        if s.strip()
+    ]
+    # Hard cap on calendar lines handed to the model, so an unusually busy day can't crowd out
+    # the rest of the briefing context.
+    BRIEFING_CALENDAR_MAX_EVENTS: int = int(
+        os.environ.get("BRIEFING_CALENDAR_MAX_EVENTS", "12")
+    )
 
 config = Config()
