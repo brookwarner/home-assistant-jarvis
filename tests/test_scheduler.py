@@ -330,11 +330,29 @@ async def test_insight_poll_group_missing_is_graceful():
     assert "garage_door" in triage_fn.call_args[0][0]
 
 
+async def test_morning_briefing_job_absent_when_disabled():
+    """BRIEFING_ENABLED=false gates the scheduled 07:30 job out entirely."""
+    from jarvis import scheduler as s
+    from jarvis.config import config
+
+    prev = config.BRIEFING_ENABLED
+    config.BRIEFING_ENABLED = False
+    try:
+        mock_ha = MagicMock()
+        mock_ha.get_states = AsyncMock(return_value=[])
+        scheduler = s.build_scheduler(mock_ha, AsyncMock(), None, AsyncMock())
+        job_ids = {job.id for job in scheduler.get_jobs()}
+        assert "morning_briefing" not in job_ids
+    finally:
+        config.BRIEFING_ENABLED = prev
+
+
 async def test_morning_briefing_appends_caravan_question_and_records():
     from jarvis import scheduler as s
     from jarvis.config import config
 
     config.CARAVAN_PROMPT_ENABLED = True
+    config.BRIEFING_ENABLED = True
     mock_ha = MagicMock()
     mock_ha.get_states = AsyncMock(return_value=[])
     mock_ha.get_state_summary = MagicMock(return_value="")
@@ -343,18 +361,21 @@ async def test_morning_briefing_appends_caravan_question_and_records():
     send_fn = AsyncMock(side_effect=lambda t: sent.append(t))
     recorder = AsyncMock(side_effect=lambda t: recorded.append(t))
 
-    with patch("jarvis.agents.briefing.generate", new_callable=AsyncMock, return_value="Good morning."), \
-         patch("jarvis.anomaly.detect_and_surface", new_callable=AsyncMock, return_value=[]):
-        scheduler = s.build_scheduler(
-            mock_ha, AsyncMock(), None, send_fn, briefing_recorder=recorder
-        )
-        jobs = {job.id: job for job in scheduler.get_jobs()}
-        await jobs["morning_briefing"].func()
+    try:
+        with patch("jarvis.agents.briefing.generate", new_callable=AsyncMock, return_value="Good morning."), \
+             patch("jarvis.anomaly.detect_and_surface", new_callable=AsyncMock, return_value=[]):
+            scheduler = s.build_scheduler(
+                mock_ha, AsyncMock(), None, send_fn, briefing_recorder=recorder
+            )
+            jobs = {job.id: job for job in scheduler.get_jobs()}
+            await jobs["morning_briefing"].func()
 
-    assert len(sent) == 1
-    assert "caravan" in sent[0].lower()
-    # The exact same text is recorded into history for reply context.
-    assert recorded == sent
+        assert len(sent) == 1
+        assert "caravan" in sent[0].lower()
+        # The exact same text is recorded into history for reply context.
+        assert recorded == sent
+    finally:
+        config.BRIEFING_ENABLED = False
 
 
 async def test_morning_briefing_skips_caravan_when_disabled():
@@ -362,6 +383,7 @@ async def test_morning_briefing_skips_caravan_when_disabled():
     from jarvis.config import config
 
     config.CARAVAN_PROMPT_ENABLED = False
+    config.BRIEFING_ENABLED = True
     try:
         mock_ha = MagicMock()
         mock_ha.get_states = AsyncMock(return_value=[])
@@ -378,6 +400,7 @@ async def test_morning_briefing_skips_caravan_when_disabled():
         assert sent == ["Good morning."]
     finally:
         config.CARAVAN_PROMPT_ENABLED = True
+        config.BRIEFING_ENABLED = False
 
 
 async def test_morning_briefing_arms_safety_net():
@@ -387,17 +410,21 @@ async def test_morning_briefing_arms_safety_net():
     from jarvis.config import config
 
     config.CARAVAN_PROMPT_ENABLED = True
+    config.BRIEFING_ENABLED = True
     mock_ha = MagicMock()
     mock_ha.get_states = AsyncMock(return_value=[])
     mock_ha.get_state_summary = MagicMock(return_value="")
 
-    with patch("jarvis.agents.briefing.generate", new_callable=AsyncMock, return_value="Morning."), \
-         patch("jarvis.anomaly.detect_and_surface", new_callable=AsyncMock, return_value=[]):
-        scheduler = s.build_scheduler(mock_ha, AsyncMock(), None, AsyncMock())
-        jobs = {job.id: job for job in scheduler.get_jobs()}
-        await jobs["morning_briefing"].func()
+    try:
+        with patch("jarvis.agents.briefing.generate", new_callable=AsyncMock, return_value="Morning."), \
+             patch("jarvis.anomaly.detect_and_surface", new_callable=AsyncMock, return_value=[]):
+            scheduler = s.build_scheduler(mock_ha, AsyncMock(), None, AsyncMock())
+            jobs = {job.id: job for job in scheduler.get_jobs()}
+            await jobs["morning_briefing"].func()
 
-    assert caravan.decision_pending() is True
+        assert caravan.decision_pending() is True
+    finally:
+        config.BRIEFING_ENABLED = False
 
 
 async def test_caravan_safety_net_forces_off_when_unanswered():

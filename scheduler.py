@@ -422,8 +422,13 @@ def build_scheduler(
         except Exception as e:
             logger.debug(f"Insight poll error: {e}")
 
-    # Daily briefing at 07:30 local time (scheduler uses system time — set TZ env var)
-    scheduler.add_job(morning_briefing, "cron", hour=7, minute=30, id="morning_briefing")
+    # Daily briefing at 07:30 local time (scheduler uses system time — set TZ env var).
+    # Gated on BRIEFING_ENABLED; the manual /briefing command runs the same flow regardless.
+    from jarvis.config import config as _bcfg
+    if _bcfg.BRIEFING_ENABLED:
+        scheduler.add_job(morning_briefing, "cron", hour=7, minute=30, id="morning_briefing")
+    else:
+        logger.info("Morning briefing disabled (BRIEFING_ENABLED=false); skipping 07:30 job")
 
     # Caravan safety net: force auto-heat off if unanswered by CARAVAN_SAFETY_HOUR (default
     # 09:00). The job self-gates on config + whether a decision is still pending today.

@@ -22,6 +22,11 @@ class Config:
     BRIEFING_MODEL: str = os.environ.get(
         "BRIEFING_MODEL", "anthropic/claude-haiku-4-5"
     )
+    # Scheduled 07:30 morning briefing. Off by default — it read as noise. The manual
+    # /briefing command still works when this is disabled; only the daily cron job is gated.
+    BRIEFING_ENABLED: bool = os.environ.get("BRIEFING_ENABLED", "false").strip().lower() in (
+        "true", "1", "yes", "on",
+    )
     CONVERSATION_MODEL: str = os.environ.get(
         "CONVERSATION_MODEL", "anthropic/claude-haiku-4-5"
     )

@@ -22,6 +22,7 @@ map:
 # and `secrets` groups appear under "Show unused optional configuration options".
 options:
   log_level: info
+  briefing_enabled: false
   proactive_enabled: true
   proactive_poll_minutes: 15
   default_mode: standard
@@ -51,6 +52,9 @@ options:
   secrets: {}
 schema:
   log_level: list(debug|info|warning|error)
+  # Scheduled 07:30 morning briefing. Off by default; the manual /briefing command in
+  # Telegram still works when this is disabled — only the daily cron job is gated.
+  briefing_enabled: bool
   proactive_enabled: bool
   proactive_poll_minutes: int(1,180)
   # Operating mode when the input_select is absent. Switch live via input_select.jarvis_mode
