@@ -96,6 +96,37 @@ async def test_get_state_summary_no_exclude_keeps_everything(mock_config):
     assert "water_usage_vs_average" in summary
 
 
+async def test_get_calendar_events_requests_the_given_window(mock_config):
+    """Calendar events come from /api/calendars/<entity>?start=&end=, which is a different
+    endpoint from /api/states — a calendar entity's own state is only on/off and carries no
+    event detail."""
+    from jarvis.ha_client import HAClient
+    client = HAClient("http://localhost:8123", "ha_token")
+
+    mock_response = MagicMock()
+    mock_response.status = 200
+    mock_response.json = AsyncMock(return_value=[
+        {"start": {"date": "2026-07-23"}, "end": {"date": "2026-07-24"},
+         "summary": "A birthday"},
+    ])
+    mock_response.__aenter__ = AsyncMock(return_value=mock_response)
+    mock_response.__aexit__ = AsyncMock(return_value=False)
+
+    with patch("aiohttp.ClientSession.get", return_value=mock_response) as mock_get:
+        events = await client.get_calendar_events(
+            "calendar.birthdays",
+            "2026-07-26T00:00:00.000Z",
+            "2026-07-27T00:00:00.000Z",
+        )
+
+    assert events[0]["summary"] == "A birthday"
+    url = mock_get.call_args[0][0]
+    params = mock_get.call_args[1]["params"]
+    assert "/api/calendars/calendar.birthdays" in url
+    assert params["start"] == "2026-07-26T00:00:00.000Z"
+    assert params["end"] == "2026-07-27T00:00:00.000Z"
+
+
 async def test_get_timezone_reads_ha_config(mock_config):
     from jarvis.ha_client import HAClient
     client = HAClient("http://localhost:8123", "ha_token")

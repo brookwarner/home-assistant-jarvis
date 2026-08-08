@@ -29,6 +29,23 @@ class HAClient:
                 resp.raise_for_status()
                 return await resp.json()
 
+    async def get_calendar_events(
+        self, entity_id: str, start: str, end: str
+    ) -> list[dict]:
+        """Events for one calendar in [start, end). A calendar entity's /api/states entry is
+        only on/off, so event detail has to come from this separate endpoint.
+
+        Raises on HTTP error — the box returns 400 for calendar entities whose integration is
+        dead, and callers are expected to skip those rather than fail the whole briefing."""
+        async with aiohttp.ClientSession() as session:
+            async with session.get(
+                f"{self._url}/api/calendars/{entity_id}",
+                headers=self._headers,
+                params={"start": start, "end": end},
+            ) as resp:
+                resp.raise_for_status()
+                return await resp.json()
+
     async def get_timezone(self) -> str | None:
         """Home Assistant's configured timezone (IANA name) from /api/config, or None."""
         async with aiohttp.ClientSession() as session:
