@@ -508,6 +508,14 @@ def _operational_layer() -> str:
         "Never give up after one failed search — try at least 3 approaches.\n"
         "When taking actions, confirm what you did in one sentence.\n"
         "When asked questions, fetch live data — never guess entity IDs without trying.\n\n"
+        "PROVENANCE: Each of your earlier replies in this conversation ends with a "
+        "machine-written [verified HH:MM: ...] note listing what you actually read that turn. "
+        "You did not write those notes and the user never sees them. They are the only "
+        "evidence of what you checked. A value that appears inside a [verified] note was "
+        "read; a value that appears anywhere else is only something you said — you did not "
+        "read it, and it may never have been true. A note saying 'nothing read this turn' "
+        "means every value in that reply is unverified. Never repeat a number from an earlier "
+        "reply as if it were current: read it again.\n\n"
         f"TIMEZONE: Entity timestamps (last_changed, last_updated, etc.) reach you already "
         f"converted to local time ({_tz()}) — do not shift them again. Read them as-is, and "
         f"compare them against the current local time given at the top of the user's message "
@@ -732,6 +740,47 @@ def _localize_timestamps(obj: Any) -> Any:
     return obj
 
 
+_READ_TOOLS = {
+    "get_state", "get_states_by_domain", "get_history", "get_statistics",
+    "search_statistics", "read_ha_config", "read_self", "search_entities",
+    "check_anomalies", "recent_changes",
+}
+
+
+def _local_hhmm() -> str:
+    import datetime, zoneinfo
+    try:
+        tz = zoneinfo.ZoneInfo(_tz())
+    except Exception:
+        tz = datetime.timezone.utc
+    return datetime.datetime.now(tz).strftime("%H:%M")
+
+
+def _provenance_entry(name: str, inputs: dict, result: Any) -> str | None:
+    """One compact record of a read that actually happened, or None for non-reads."""
+    if name not in _READ_TOOLS:
+        return None
+    if name == "get_state" and isinstance(result, dict):
+        entity = result.get("entity_id") or inputs.get("entity_id") or "?"
+        return f"{entity}={result.get('state', '?')}"
+    target = inputs.get("entity_id") or inputs.get("domain") or inputs.get("query") or ""
+    return f"{name}({target})" if target else name
+
+
+def _provenance_note(entries: list[str]) -> str:
+    """A machine-written record appended to the assistant turn in history — never sent to
+    the user. It is the only thing that distinguishes a value the model read from a value
+    it merely said, which from inside the context look identical.
+
+    Deliberately plain text: putting real tool_use/tool_result blocks in history would make
+    the blind history[-MAX_HISTORY:] slice able to orphan half a tool exchange, and Anthropic
+    rejects those blocks without a tools= param (see router.build_cached_messages)."""
+    stamp = _local_hhmm()
+    if not entries:
+        return f"\n[verified {stamp}: nothing read this turn — any value above is unverified]"
+    return f"\n[verified {stamp}: " + ", ".join(entries) + "]"
+
+
 def _asserts_checkable_fact(text: str) -> bool:
     """True if the reply asserts something that could only be known by reading HA."""
     return bool(_MEASUREMENT_RE.search(text) or _FAULT_CLAIM_RE.search(text))
@@ -796,6 +845,7 @@ class ConversationAgent:
         self._pending_reply: asyncio.Future | None = None
         self._agent_busy = False
         self._recent_alerts: deque[str] = deque(maxlen=8)
+        self._last_read_log: list[str] = []
         self._caravan_verify_task: asyncio.Task | None = None
 
     def _record_sent(self, text: str) -> None:
@@ -826,7 +876,11 @@ class ConversationAgent:
 
         try:
             response_text = await self._run_with_tools(history)
-            history.append({"role": "assistant", "content": response_text})
+            # The note goes to history only — the user sees the reply, not the bookkeeping.
+            history.append({
+                "role": "assistant",
+                "content": response_text + _provenance_note(self._last_read_log),
+            })
             return response_text
         except Exception as e:
             logger.error(f"Conversation agent failed: {e}")
@@ -864,7 +918,10 @@ class ConversationAgent:
         try:
             response_text = await self._run_with_tools(messages, model=model, mode="proactive")
             if use_history:
-                self._history[chat_id].append({"role": "assistant", "content": response_text})
+                self._history[chat_id].append({
+                    "role": "assistant",
+                    "content": response_text + _provenance_note(self._last_read_log),
+                })
             stripped = response_text.strip()
             if stripped and stripped.upper() != "SILENT" and self._send_fn:
                 self._record_sent(stripped)
@@ -879,6 +936,10 @@ class ConversationAgent:
         # Reload system prompt each call so memory/entity changes are live
         msgs = [{"role": "system", "content": _load_system_prompt(mode)}] + messages
         tool_log: list[tuple[str, dict]] = []
+        # Same list object is stashed on the agent, so callers see reads accumulate and can
+        # build the provenance note whichever of the several return paths below is taken.
+        read_log: list[str] = []
+        self._last_read_log = read_log
         rounds = 0
 
         from jarvis.config import config
@@ -918,6 +979,9 @@ class ConversationAgent:
                         inputs = {}
                     tool_log.append((tc.function.name, inputs))
                     result = await self._execute_tool(tc.function.name, inputs)
+                    entry = _provenance_entry(tc.function.name, inputs, result)
+                    if entry:
+                        read_log.append(entry)
                     msgs.append({
                         "role": "tool",
                         "tool_call_id": tc.id,

@@ -620,6 +620,94 @@ def test_prompt_mode_layer_differs():
     assert proactive != convo
 
 
+def _tool_call(name: str, arguments: str, call_id: str = "call_1"):
+    """Build a mock tool_call matching what litellm hands back."""
+    tc = MagicMock()
+    tc.id = call_id
+    tc.function.name = name
+    tc.function.arguments = arguments
+    return tc
+
+
+def _resp(finish_reason: str, content=None, tool_calls=None):
+    r = MagicMock()
+    r.choices = [MagicMock(
+        finish_reason=finish_reason,
+        message=MagicMock(content=content, tool_calls=tool_calls),
+    )]
+    return r
+
+
+async def test_provenance_note_records_readings_in_history_only():
+    """History kept prose and threw away the evidence, so a value the model invented and a
+    value it measured looked identical on the next turn. Record what was actually read —
+    in history, never in the reply the user sees."""
+    from jarvis.config import config
+    from jarvis.agents.conversation import ConversationAgent
+    from jarvis.ha_client import HAClient
+
+    config.TIMEZONE = "Pacific/Auckland"
+    mock_ha = MagicMock(spec=HAClient)
+    mock_ha.get_state = AsyncMock(return_value={
+        "entity_id": "sensor.attic_temp_new",
+        "state": "15.7",
+        "last_updated": "2026-08-08T03:34:00+00:00",
+    })
+    agent = ConversationAgent(mock_ha)
+
+    calls = [
+        _resp("tool_calls", tool_calls=[_tool_call("get_state", '{"entity_id": "sensor.attic_temp_new"}')]),
+        _resp("stop", content="The attic is 15.7°C."),
+    ]
+    with patch("litellm.acompletion", new_callable=AsyncMock, side_effect=calls):
+        result = await agent.reply(chat_id=7, user_text="how warm is the attic?")
+
+    assert "[verified" not in result, "bookkeeping must never reach the user"
+    stored = agent._history[7][-1]["content"]
+    assert "[verified" in stored
+    assert "sensor.attic_temp_new=15.7" in stored
+
+
+async def test_provenance_note_marks_turns_where_nothing_was_read():
+    """The turn that invented 24.7°C read nothing. That fact has to survive into history,
+    or the next turn sees a bare confident sentence and restates it."""
+    from jarvis.agents.conversation import ConversationAgent
+
+    agent = ConversationAgent(MagicMock())
+    with patch("litellm.acompletion", new_callable=AsyncMock,
+               return_value=_resp("stop", content="The attic is 24.7°C.")):
+        await agent.reply(chat_id=8, user_text="how warm is the attic?")
+
+    stored = agent._history[8][-1]["content"]
+    assert "nothing read" in stored
+
+
+async def test_provenance_note_survives_history_truncation_shape():
+    """The note rides on the assistant turn as plain text — no tool_use/tool_result blocks —
+    so the blind history[-MAX_HISTORY:] slice can never orphan half a tool exchange."""
+    from jarvis.agents.conversation import ConversationAgent
+
+    agent = ConversationAgent(MagicMock())
+    with patch("litellm.acompletion", new_callable=AsyncMock,
+               return_value=_resp("stop", content="ok")):
+        for i in range(15):
+            await agent.reply(chat_id=9, user_text=f"msg {i}")
+
+    for m in agent._history[9]:
+        assert isinstance(m["content"], str)
+        assert m["role"] in ("user", "assistant")
+        assert "tool_call_id" not in m
+
+
+def test_prompt_explains_the_verified_marker():
+    """The marker is useless unless the model knows what it means: values inside it were
+    read, values outside it are only things it said."""
+    from jarvis.agents.conversation import _operational_layer
+    p = _operational_layer()
+    assert "[verified" in p
+    assert "did not read it" in p.lower() or "not something you read" in p.lower()
+
+
 def test_operational_prompt_says_timestamps_are_already_local():
     """Now that _execute_tool converts, telling the model to convert again invites a
     double shift. The prompt must describe what it will actually receive."""
