@@ -508,9 +508,10 @@ def _operational_layer() -> str:
         "Never give up after one failed search — try at least 3 approaches.\n"
         "When taking actions, confirm what you did in one sentence.\n"
         "When asked questions, fetch live data — never guess entity IDs without trying.\n\n"
-        f"TIMEZONE: All HA entity timestamps (last_changed, last_updated, etc.) are UTC. "
-        f"Local timezone is {_tz()}. Always convert UTC to local time before reporting any time or date. "
-        f"Never report a UTC timestamp as if it were local time — a HA timestamp of 21:00 UTC is not 9pm locally.\n\n"
+        f"TIMEZONE: Entity timestamps (last_changed, last_updated, etc.) reach you already "
+        f"converted to local time ({_tz()}) — do not shift them again. Read them as-is, and "
+        f"compare them against the current local time given at the top of the user's message "
+        f"before calling anything stale.\n\n"
         "FORMATTING: Never use markdown. No bold, italics, tables, * bullets, # headers, backticks.\n\n"
         "Never say 'certainly', 'of course', 'happy to help', 'great question'. Don't pad — but do not flatten "
         "your voice into a terse status report either. Speak as yourself.\n\n"
@@ -691,6 +692,44 @@ _FAULT_CLAIM_RE = re.compile(
     r"stopped reporting|has vanished|is missing|went missing|flat battery|dead battery)\b",
     re.IGNORECASE,
 )
+
+
+# HA hands back UTC. The prompt asked the model to convert; nothing did, and it read a
+# one-minute-old value as a twelve-hour-old dropout. Convert in code instead.
+_TIMESTAMP_KEYS = {
+    "last_changed", "last_updated", "last_reported", "last_triggered", "last_seen",
+    "start", "end", "timestamp",
+}
+
+
+def _to_local_iso(value: str) -> str:
+    """Convert an ISO-8601 UTC timestamp to local time. Junk passes through untouched —
+    a malformed attribute must never break a tool call."""
+    import datetime, zoneinfo
+    try:
+        dt = datetime.datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except (ValueError, AttributeError):
+        return value
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=datetime.timezone.utc)
+    try:
+        tz = zoneinfo.ZoneInfo(_tz())
+    except Exception:
+        return value
+    return dt.astimezone(tz).isoformat(timespec="seconds")
+
+
+def _localize_timestamps(obj: Any) -> Any:
+    """Walk a tool result and rewrite UTC timestamps into local time."""
+    if isinstance(obj, dict):
+        return {
+            k: _to_local_iso(v) if k in _TIMESTAMP_KEYS and isinstance(v, str)
+            else _localize_timestamps(v)
+            for k, v in obj.items()
+        }
+    if isinstance(obj, list):
+        return [_localize_timestamps(item) for item in obj]
+    return obj
 
 
 def _asserts_checkable_fact(text: str) -> bool:
@@ -928,7 +967,8 @@ class ConversationAgent:
             "You handle complex tasks: refactors, multi-file edits, debugging, new automations.\n"
             "You have the same tools as the main agent. Work carefully, verify your changes.\n"
             "Return a clear summary of what you did.\n\n"
-            f"TIMEZONE: All HA timestamps are UTC. Local timezone is {_tz()}. Convert all times.\n"
+            f"TIMEZONE: HA timestamps reach you already converted to local time ({_tz()}). "
+            f"Do not shift them again.\n"
             "FORMATTING: Plain text only. No markdown."
         )
         msgs = [
@@ -1028,6 +1068,11 @@ class ConversationAgent:
             self._pending_reply = None
 
     async def _execute_tool(self, name: str, inputs: dict) -> Any:
+        """Run a tool and hand back its result with UTC timestamps rewritten to local time,
+        so the model never has to do the conversion itself."""
+        return _localize_timestamps(await self._dispatch_tool(name, inputs))
+
+    async def _dispatch_tool(self, name: str, inputs: dict) -> Any:
         try:
             if name == "get_state":
                 return await self._ha.get_state(inputs["entity_id"])

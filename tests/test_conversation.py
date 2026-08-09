@@ -620,6 +620,76 @@ def test_prompt_mode_layer_differs():
     assert proactive != convo
 
 
+def test_operational_prompt_says_timestamps_are_already_local():
+    """Now that _execute_tool converts, telling the model to convert again invites a
+    double shift. The prompt must describe what it will actually receive."""
+    from jarvis.agents.conversation import _operational_layer
+    p = _operational_layer()
+    assert "already converted to local time" in p
+    assert "Always convert UTC to local time" not in p
+
+
+def test_localize_timestamps_converts_the_exact_transcript_case():
+    """The phantom dropout: at 15:35 NZST it read last_updated 03:34 UTC — one minute old —
+    called the sensor dead, and invented a Zigbee fault to explain it. 03:34 UTC IS 15:34
+    NZST. The prompt asked the model to convert; nothing did."""
+    from jarvis.config import config
+    from jarvis.agents.conversation import _localize_timestamps
+
+    config.TIMEZONE = "Pacific/Auckland"
+    out = _localize_timestamps({
+        "entity_id": "sensor.attic_temp_new",
+        "state": "15.7",
+        "last_updated": "2026-08-08T03:34:00+00:00",
+    })
+
+    assert out["last_updated"].startswith("2026-08-08T15:34")
+    assert out["state"] == "15.7"  # non-timestamp values untouched
+
+
+def test_localize_timestamps_handles_z_suffix_and_nesting():
+    """HA returns both +00:00 and Z forms, and history arrives as nested lists."""
+    from jarvis.config import config
+    from jarvis.agents.conversation import _localize_timestamps
+
+    config.TIMEZONE = "Pacific/Auckland"
+    out = _localize_timestamps([[{"last_changed": "2026-08-08T03:34:00Z"}]])
+
+    assert out[0][0]["last_changed"].startswith("2026-08-08T15:34")
+
+
+def test_localize_timestamps_leaves_junk_alone():
+    """A malformed or non-timestamp value must pass through rather than blow up a tool call."""
+    from jarvis.config import config
+    from jarvis.agents.conversation import _localize_timestamps
+
+    config.TIMEZONE = "Pacific/Auckland"
+    out = _localize_timestamps({"last_updated": "never", "friendly_name": "Attic"})
+
+    assert out["last_updated"] == "never"
+    assert out["friendly_name"] == "Attic"
+
+
+async def test_execute_tool_localizes_ha_timestamps():
+    """The conversion must happen on the real tool-result path, not just in a helper."""
+    from jarvis.config import config
+    from jarvis.agents.conversation import ConversationAgent
+    from jarvis.ha_client import HAClient
+
+    config.TIMEZONE = "Pacific/Auckland"
+    mock_ha = MagicMock(spec=HAClient)
+    mock_ha.get_state = AsyncMock(return_value={
+        "entity_id": "sensor.attic_temp_new",
+        "state": "15.7",
+        "last_updated": "2026-08-08T03:34:00+00:00",
+    })
+    agent = ConversationAgent(mock_ha)
+
+    result = await agent._execute_tool("get_state", {"entity_id": "sensor.attic_temp_new"})
+
+    assert result["last_updated"].startswith("2026-08-08T15:34")
+
+
 def test_footer_flags_measurement_claimed_without_any_read():
     """Silence was the only signal that nothing was checked, which reads as ordinary
     formatting rather than a warning. A number asserted with zero reads must say so."""
