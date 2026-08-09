@@ -3,6 +3,7 @@ import asyncio
 import json
 import logging
 import os
+import re
 import subprocess
 from collections import defaultdict, deque
 from pathlib import Path
@@ -678,8 +679,32 @@ def _finalize_proactive(content: str) -> str | None:
     return msg or None
 
 
-def _format_tool_footer(tool_log: list[tuple[str, dict]]) -> str:
-    """Compact footer showing what the bot actually did. No raw entity IDs."""
+# A number welded to a unit is a claim about the house, not turn of phrase.
+_MEASUREMENT_RE = re.compile(
+    r"\d+(?:\.\d+)?\s*(?:°\s*[CF]?|℃|%|kWh|kW|Wh|W|L\b|litres?|liters?|mm|hPa|ppm)",
+    re.IGNORECASE,
+)
+
+# Fault language that only means something if a tool actually returned it.
+_FAULT_CLAIM_RE = re.compile(
+    r"\b(?:unavailable|offline|unresponsive|dropped out|dropped off|not responding|"
+    r"stopped reporting|has vanished|is missing|went missing|flat battery|dead battery)\b",
+    re.IGNORECASE,
+)
+
+
+def _asserts_checkable_fact(text: str) -> bool:
+    """True if the reply asserts something that could only be known by reading HA."""
+    return bool(_MEASUREMENT_RE.search(text) or _FAULT_CLAIM_RE.search(text))
+
+
+def _format_tool_footer(tool_log: list[tuple[str, dict]], text: str = "") -> str:
+    """Compact footer showing what the bot actually did. No raw entity IDs.
+
+    When the reply asserts a reading or a fault but nothing was read this turn, say so.
+    An unverified answer used to be indistinguishable from a verified one — both arrived
+    with no footer, and a missing footer reads as formatting rather than a warning.
+    """
     reads = 0
     actions: list[str] = []
 
@@ -716,6 +741,8 @@ def _format_tool_footer(tool_log: list[tuple[str, dict]]) -> str:
     if reads > 0:
         parts.append(f"checked {reads} source{'s' if reads > 1 else ''}")
     parts.extend(actions)
+    if reads == 0 and text and _asserts_checkable_fact(text):
+        parts.append("not checked — no sensor was read this turn")
 
     return "\n\n(" + ", ".join(parts) + ")" if parts else ""
 
@@ -875,7 +902,7 @@ class ConversationAgent:
                     if send_text is None:
                         return "SILENT"
                     return send_text + _format_tool_footer(tool_log)
-                return content + _format_tool_footer(tool_log)
+                return content + _format_tool_footer(tool_log, content)
 
         # Hit max tool rounds — force a final response without tools
         msgs.append({"role": "user", "content": "Based on everything you found, give your answer now."})
@@ -889,7 +916,7 @@ class ConversationAgent:
             if send_text is None:
                 return "SILENT"
             return send_text + _format_tool_footer(tool_log)
-        return content + _format_tool_footer(tool_log)
+        return content + _format_tool_footer(tool_log, content)
 
     async def _run_opus(self, task: str) -> dict:
         """Run a task using the Opus sub-agent with the same tools."""

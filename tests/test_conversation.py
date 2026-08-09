@@ -620,6 +620,94 @@ def test_prompt_mode_layer_differs():
     assert proactive != convo
 
 
+def test_footer_flags_measurement_claimed_without_any_read():
+    """Silence was the only signal that nothing was checked, which reads as ordinary
+    formatting rather than a warning. A number asserted with zero reads must say so."""
+    from jarvis.agents.conversation import _format_tool_footer
+    f = _format_tool_footer([], "The attic is 24.7°C right now.")
+    assert "not checked" in f
+
+
+def test_footer_flags_fault_claimed_without_any_read():
+    """'End bedroom is unavailable' — asserted about the wrong entity, with no read."""
+    from jarvis.agents.conversation import _format_tool_footer
+    f = _format_tool_footer([], "The end bedroom sensor is unavailable.")
+    assert "not checked" in f
+
+
+def test_footer_stays_silent_for_ordinary_conversation():
+    """No claim, no read, no footer — don't turn every 'goodnight' into a warning."""
+    from jarvis.agents.conversation import _format_tool_footer
+    assert _format_tool_footer([], "Goodnight, sleep well.") == ""
+
+
+def test_footer_does_not_flag_verified_measurement():
+    """A read happened — report it the way it always did, with no warning."""
+    from jarvis.agents.conversation import _format_tool_footer
+    f = _format_tool_footer([("get_state", {})], "The attic is 17.0°C.")
+    assert "checked 1 source" in f
+    assert "not checked" not in f
+
+
+def test_footer_flags_measurement_when_only_actions_ran():
+    """Calling a service is not reading a sensor. An action-only turn that also asserts a
+    reading is still asserting an unverified reading."""
+    from jarvis.agents.conversation import _format_tool_footer
+    f = _format_tool_footer(
+        [("call_service", {"domain": "switch", "service": "turn_on"})],
+        "Done — the lounge is 22.3°C.",
+    )
+    assert "not checked" in f
+
+
+async def test_proactive_alerts_are_exempt_from_unverified_marker():
+    """Proactive turns are triggered BY an observed HA state change — that event is the
+    evidence, so zero tool calls does not mean unverified there. The marker is a
+    chat-path signal only; stamping alerts with it would be both wrong and noisy."""
+    from jarvis.agents.conversation import ConversationAgent
+
+    send_fn = AsyncMock()
+    agent = ConversationAgent(MagicMock(), send_fn=send_fn)
+
+    mock_choice = MagicMock()
+    mock_choice.finish_reason = "stop"
+    mock_choice.message.content = "NOTIFY:\nThe spa thermostat is unavailable."
+    mock_choice.message.tool_calls = None
+    mock_response = MagicMock()
+    mock_response.choices = [mock_choice]
+
+    with patch("litellm.acompletion", new_callable=AsyncMock, return_value=mock_response):
+        await agent.run_proactive("itc_308: online -> unavailable", chat_id=1, use_history=False)
+
+    sent = send_fn.await_args.args[0]
+    assert "not checked" not in sent
+
+
+def test_footer_backwards_compatible_without_text():
+    """Called with no text (older call sites / proactive), behaviour is unchanged."""
+    from jarvis.agents.conversation import _format_tool_footer
+    assert _format_tool_footer([]) == ""
+    assert "checked 2 sources" in _format_tool_footer([("get_state", {}), ("get_history", {})])
+
+
+async def test_reply_appends_unverified_marker_end_to_end():
+    """The marker must actually reach the user's reply, not just the helper."""
+    from jarvis.agents.conversation import ConversationAgent
+
+    agent = ConversationAgent(MagicMock())
+    mock_choice = MagicMock()
+    mock_choice.finish_reason = "stop"
+    mock_choice.message.content = "The attic is 24.7°C."
+    mock_choice.message.tool_calls = None
+    mock_response = MagicMock()
+    mock_response.choices = [mock_choice]
+
+    with patch("litellm.acompletion", new_callable=AsyncMock, return_value=mock_response):
+        result = await agent.reply(chat_id=1, user_text="how warm is the attic?")
+
+    assert "not checked" in result
+
+
 def test_conversation_mode_carries_anti_confabulation_guard():
     """aaa1e31 hardened the proactive monitor and left the chat path a single sentence, so
     the mode the user actually talks to had no guard at all — and it invented attic
