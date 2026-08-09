@@ -552,9 +552,33 @@ def _operational_layer() -> str:
     )
 
 
+# Applies to BOTH modes. The chat path used to have no guard at all, which is how the
+# attic came to be "24.7°C" on an evening it never rose above 17.3.
+_ANTI_CONFABULATION = (
+    "ANTI-CONFABULATION — never report a value or a fault you have not verified:\n"
+    "- Never state a sensor reading, temperature, or other numeric value unless a tool call "
+    "you made THIS turn returned it. If you have not read it this turn, read it. Never "
+    "estimate a reading, and never infer one from the weather, the season, or what is "
+    "plausible for the room.\n"
+    "- A value you gave earlier in this conversation is NOT a current reading — it is only "
+    "something you said. Readings go stale. If the user asks again, call the tool again, "
+    "even if you answered moments ago.\n"
+    "- An entity whose state is 'off', 'unavailable', or 'unknown' is OFF or temporarily "
+    "unreadable. That is NOT the same as 'missing', 'vanished', or 'broken'. Never tell the "
+    "user an entity is missing or an automation is broken unless a get_state call you made "
+    "THIS turn returned an error or an explicit not-found for that exact entity id.\n"
+    "- Never mention 'repair issues' or claim repairs are active unless a tool you called this "
+    "turn actually returned them. Do not infer repairs from a state change.\n"
+    "- Never invent a mechanism for a fault ('probably a Zigbee dropout', 'the battery must be "
+    "flat'). If you have not verified the cause, say you do not know what is causing it.\n"
+    "- If you could not verify something, say so plainly. An honest 'I haven't checked that' "
+    "is always better than a confident number you did not read."
+)
+
 _MODE_LAYERS = {
     "conversation": (
-        "You are replying to a message from the user. Answer in your own voice."
+        "You are replying to a message from the user. Answer in your own voice.\n"
+        + _ANTI_CONFABULATION
     ),
     "proactive": (
         "PROACTIVE MODE: a home-state change or a scheduled poll triggered you — the user did NOT "
@@ -573,13 +597,7 @@ _MODE_LAYERS = {
         "Do not repeat anything from 'Recent messages already sent' below. "
         "Work from the change summary you were given. Do not call get_states (it dumps the whole house); "
         "if you must check one entity, use get_state with a specific id.\n"
-        "ANTI-CONFABULATION — never invent a fault you have not verified:\n"
-        "- An entity whose state is 'off', 'unavailable', or 'unknown' is OFF or temporarily "
-        "unreadable. That is NOT the same as 'missing', 'vanished', or 'broken'. Never tell the "
-        "user an entity is missing or an automation is broken unless a get_state call you made "
-        "THIS turn returned an error or an explicit not-found for that exact entity id.\n"
-        "- Never mention 'repair issues' or claim repairs are active unless a tool you called this "
-        "turn actually returned them. Do not infer repairs from a state change.\n"
+        + _ANTI_CONFABULATION + "\n"
         "- A falling temperature on something whose heater/heating is OFF is the EXPECTED result of "
         "it being off, not a fault — stay SILENT. Heating being off because the user finished with a "
         "space (e.g. said they were done in the caravan) is normal and not notify-worthy.\n"

@@ -620,6 +620,49 @@ def test_prompt_mode_layer_differs():
     assert proactive != convo
 
 
+def test_conversation_mode_carries_anti_confabulation_guard():
+    """aaa1e31 hardened the proactive monitor and left the chat path a single sentence, so
+    the mode the user actually talks to had no guard at all — and it invented attic
+    temperatures. The guard must apply to BOTH modes."""
+    from jarvis.agents import conversation
+    p = conversation._load_system_prompt(mode="conversation")
+    assert "ANTI-CONFABULATION" in p
+
+
+def test_conversation_mode_forbids_unverified_readings():
+    """Never state a number you did not read with a tool this turn."""
+    from jarvis.agents import conversation
+    p = conversation._load_system_prompt(mode="conversation").lower()
+    assert "never state a sensor reading" in p
+    assert "this turn" in p
+
+
+def test_conversation_mode_forbids_restating_stale_readings_as_current():
+    """The frozen-lounge signature: 22.28°C reported identically 44 minutes apart because
+    the model restated its own earlier prose instead of re-reading. A value mentioned
+    earlier in the conversation is not a current reading."""
+    from jarvis.agents import conversation
+    p = conversation._load_system_prompt(mode="conversation").lower()
+    assert "is not a current reading" in p
+    assert "call the tool again" in p
+
+
+def test_conversation_mode_forbids_inventing_fault_mechanisms():
+    """'Probably a Zigbee dropout' — a mechanism invented for a fault that never existed."""
+    from jarvis.agents import conversation
+    p = conversation._load_system_prompt(mode="conversation").lower()
+    assert "never invent a mechanism" in p
+
+
+def test_proactive_mode_keeps_its_own_guard():
+    """Extracting the shared guard must not strip proactive's mode-specific rules."""
+    from jarvis.agents import conversation
+    p = conversation._load_system_prompt(mode="proactive")
+    assert "ANTI-CONFABULATION" in p
+    assert "repair issues" in p
+    assert "SILENT" in p
+
+
 def test_proactive_round_cap_is_lower():
     from jarvis.agents import conversation
     assert conversation.MAX_PROACTIVE_TOOL_ROUNDS < conversation.MAX_TOOL_ROUNDS
