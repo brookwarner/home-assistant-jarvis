@@ -36,6 +36,7 @@ from jarvis.agents.triage import classify
 from jarvis.transcriber import transcribe
 from jarvis.webhook_server import start_server
 from jarvis.scheduler import build_scheduler, WATCHED_DOMAINS
+from jarvis.log_redaction import install_log_redaction, quiet_http_client_logs
 
 logging.basicConfig(
     # Case-insensitive + safe default: add-on options use lowercase (info/debug/...),
@@ -44,6 +45,19 @@ logging.basicConfig(
     level=getattr(logging, str(config.LOG_LEVEL).upper(), logging.INFO),
     format="%(asctime)s %(name)s %(levelname)s %(message)s",
 )
+# Must come straight after basicConfig: until the filter is attached, anything
+# httpx logs (the Telegram poll URL contains the live bot token) lands in the
+# add-on log ring buffer in plaintext.
+install_log_redaction(
+    [
+        config.TELEGRAM_BOT_TOKEN,
+        config.HA_TOKEN,
+        config.ANTHROPIC_API_KEY,
+        config.OPENROUTER_API_KEY,
+        config.GROQ_API_KEY,
+    ]
+)
+quiet_http_client_logs()
 logger = logging.getLogger(__name__)
 
 ha = HAClient(config.HA_URL, config.HA_TOKEN)
