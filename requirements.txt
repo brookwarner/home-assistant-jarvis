@@ -1,6 +1,6 @@
 python-telegram-bot==21.6
 aiohttp==3.10.10
-litellm==1.52.0
+litellm==1.93.0
 anthropic==0.40.0
 # faster-whisper==1.0.3  # Requires ctranslate2 — not available on ARM/musllinux; install manually if needed
 APScheduler==3.10.4
