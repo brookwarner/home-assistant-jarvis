@@ -13,7 +13,10 @@ logger = logging.getLogger(__name__)
 DEFAULT_ALERTS_PATH = str(Path(__file__).parent / "user_alerts.json")
 
 # Key entities to watch in the insight polling loop
-WATCHED_DOMAINS = ["sensor", "binary_sensor", "switch", "climate", "lock"]
+# `person` carries home/not_home/zone and is what lets the briefing reason about the
+# household's day rather than just the house's readings. device_tracker is deliberately left
+# out: it's the noisy raw layer (battery monitors, stale iPads) that person already aggregates.
+WATCHED_DOMAINS = ["sensor", "binary_sensor", "switch", "climate", "lock", "person"]
 
 # Domains where any state change is meaningful (no noise filtering)
 BINARY_DOMAINS = {"binary_sensor", "switch", "lock", "input_boolean"}
@@ -296,7 +299,7 @@ async def run_morning_briefing(
     """Generate and deliver the morning briefing. Shared by the scheduled 07:30 job and the
     manual /briefing command so both exercise the same flow: append the caravan question
     (arming the safety net), send, and record into history. Returns the sent text."""
-    from jarvis.agents.briefing import generate, fetch_water_context
+    from jarvis.agents import briefing as briefing_agent
     from jarvis.anomaly import detect_and_surface
     from jarvis.config import config
 
@@ -305,13 +308,25 @@ async def run_morning_briefing(
         states, domains=WATCHED_DOMAINS, exclude=config.BRIEFING_EXCLUDE_ENTITIES
     )
     anomalies = await detect_and_surface(ha_client)  # [] on any failure
-    water_context = await fetch_water_context(ha_client)  # None on any failure
+    water_context = await briefing_agent.fetch_water_context(ha_client)  # None on any failure
+    # Today's commitments, so the briefing can talk about the day rather than only the house.
+    # Best-effort: a calendar outage degrades the briefing, it never cancels it.
+    try:
+        calendar_context = await briefing_agent.fetch_calendar_context(ha_client, states)
+    except Exception as e:
+        logger.debug(f"calendar context unavailable: {e}")
+        calendar_context = None
     # Only ground the briefing in Watercare figures on a day water is actually newsworthy.
     # Once a standing water deviation has habituated out of the anomaly list, drop the water
     # block too — otherwise Jarvis keeps getting handed the figures and keeps leading with them.
     if water_context and not any("water" in a.lower() for a in anomalies):
         water_context = None
-    text = await generate(summary, anomalies=anomalies, water_context=water_context)
+    text = await briefing_agent.generate(
+        summary,
+        anomalies=anomalies,
+        water_context=water_context,
+        calendar_context=calendar_context,
+    )
     if config.CARAVAN_PROMPT_ENABLED:
         from jarvis import caravan
         text = text.rstrip() + "\n\n" + CARAVAN_QUESTION
