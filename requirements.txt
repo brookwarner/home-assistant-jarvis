@@ -4,7 +4,7 @@ litellm==1.109.1
 anthropic==0.40.0
 # faster-whisper==1.0.3  # Requires ctranslate2 — not available on ARM/musllinux; install manually if needed
 APScheduler==3.10.4
-python-dotenv==1.0.1
+python-dotenv==1.2.2
 pytest==8.3.3
 pytest-asyncio==0.24.0
 pytest-mock==3.14.0
