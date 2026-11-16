@@ -34,7 +34,13 @@ def captured():
 
 
 def test_poll_line_no_longer_contains_the_token(captured):
-    logging.getLogger("httpx").info(POLL_LINE)
+    logger = logging.getLogger("httpx")
+    previous_level = logger.level
+    try:
+        logger.setLevel(logging.INFO)
+        logger.info(POLL_LINE)
+    finally:
+        logger.setLevel(previous_level)
     out = captured.getvalue()
     assert FAKE_TOKEN not in out
     assert REDACTED in out
